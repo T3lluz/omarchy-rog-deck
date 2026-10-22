@@ -13,7 +13,8 @@ Column {
   readonly property var battery: status && status.battery ? status.battery : null
   readonly property var display: status && status.display ? status.display : null
   readonly property var armoury: status && status.armoury ? status.armoury : ({})
-  readonly property int limit: battery && service ? service.pick("battery.limit", battery.limit) : 100
+  readonly property int limit: battery && service ? service.pick("battery.limit", battery.limit) || 100 : 100
+  readonly property bool fnlockAvailable: !!(status && status.fnlock && status.fnlock.available)
 
   function armouryOn(name) {
     var attr = armoury[name]
@@ -23,9 +24,18 @@ Column {
   spacing: Style.space(12)
 
   // ---------- Battery ----------
+  SectionHeader {
+    icon: tab.status && tab.status.ac ? "󰂄" : "󰁹"
+    title: "BATTERY"
+    detail: tab.battery ? (Model.batteryLine(tab.battery, tab.status.ac) + (tab.battery.status ? " · " + tab.battery.status : "")).toUpperCase() : ""
+    foreground: tab.deck.fg
+    fontFamily: tab.deck.fontFamily
+    visible: !!tab.battery && tab.battery.limit !== null
+  }
+
   Column {
     width: parent.width
-    spacing: Style.space(8)
+    spacing: Style.space(10)
     visible: !!tab.battery && tab.battery.limit !== null
 
     SliderField {
@@ -45,9 +55,9 @@ Column {
     Seg {
       width: parent.width
       options: [
-        { value: 60, label: "60%", hint: "Plugged in most of the time" },
-        { value: 80, label: "80%", hint: "A good everyday balance" },
-        { value: 100, label: "100%", hint: "Full charge" }
+        { value: 60, label: "60%", icon: "󰁿", hint: "Plugged in most of the time" },
+        { value: 80, label: "80%", icon: "󰂁", hint: "A good everyday balance" },
+        { value: 100, label: "100%", icon: "󰁹", hint: "Full charge" }
       ]
       value: tab.limit
       foreground: tab.deck.fg
@@ -62,12 +72,12 @@ Column {
       Text {
         id: onceText
         anchors.left: parent.left
-        anchors.right: onceButton.left
+        anchors.right: onceButton.visible ? onceButton.left : parent.right
         anchors.rightMargin: Style.space(10)
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
-        text: tab.limit < 100 ? "Stops charging at " + tab.limit + "% to spare the battery" : "Charges to full"
+        text: tab.limit < 100 ? "Stops at " + tab.limit + "% to spare the battery." : "Charges to full."
         color: tab.deck.fg
         opacity: 0.55
         font.family: tab.deck.fontFamily
@@ -77,8 +87,10 @@ Column {
       Button {
         id: onceButton
         anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
         visible: tab.limit < 100
         text: "Full once"
+        iconText: "󰂅"
         tooltipText: "Charge to 100% this time only, then go back to the limit"
         fontSize: Style.font.bodySmall
         foreground: tab.deck.fg
@@ -92,50 +104,58 @@ Column {
   // ---------- Display ----------
   PanelSeparator { foreground: tab.deck.fg; visible: !!tab.display }
 
-  Column {
-    width: parent.width
-    spacing: Style.space(8)
+  SectionHeader {
+    icon: "󰍹"
+    title: "DISPLAY"
+    detail: tab.display ? (tab.service ? tab.service.pick("display.refresh", tab.display.refresh) : tab.display.refresh) + " HZ" : ""
+    foreground: tab.deck.fg
+    fontFamily: tab.deck.fontFamily
     visible: !!tab.display
+  }
 
-    SectionLabel { text: "REFRESH RATE"; foreground: tab.deck.fg; fontFamily: tab.deck.fontFamily }
+  Seg {
+    width: parent.width
+    visible: !!tab.display
+    options: [{ value: "auto", label: "Auto", icon: "󰁪", hint: "Highest when plugged in, 60 Hz on battery" }]
+      .concat((tab.display ? tab.display.rates : []).map(function(r) { return { value: String(r), label: r + " Hz" } }))
+    value: tab.service && tab.service.settings.refresh
+      ? tab.service.settings.refresh
+      : String(tab.service && tab.display ? tab.service.pick("display.refresh", tab.display.refresh) : "")
+    foreground: tab.deck.fg
+    fontFamily: tab.deck.fontFamily
+    onPicked: function(v) { tab.service.setRefreshMode(v) }
+  }
 
-    Seg {
-      width: parent.width
-      options: [{ value: "auto", label: "Auto", hint: "Highest when plugged in, 60 Hz on battery" }]
-        .concat((tab.display ? tab.display.rates : []).map(function(r) { return { value: String(r), label: r + " Hz" } }))
-      value: tab.service && tab.service.settings.refresh
-        ? tab.service.settings.refresh
-        : String(tab.service && tab.display ? tab.service.pick("display.refresh", tab.display.refresh) : "")
-      foreground: tab.deck.fg
-      fontFamily: tab.deck.fontFamily
-      onPicked: function(v) { tab.service.setRefreshMode(v) }
-    }
-
-    SwitchRow {
-      width: parent.width
-      visible: !!tab.armoury.panel_overdrive
-      label: "Panel overdrive"
-      hint: "Faster pixel response, less ghosting"
-      checked: tab.armouryOn("panel_overdrive")
-      foreground: tab.deck.fg
-      fontFamily: tab.deck.fontFamily
-      onToggled: tab.service.setArmoury("panel_overdrive", checked ? 0 : 1)
-    }
+  SwitchRow {
+    width: parent.width
+    visible: !!tab.armoury.panel_overdrive
+    icon: "󱐋"
+    label: "Panel overdrive"
+    hint: "Faster pixel response, less ghosting"
+    checked: tab.armouryOn("panel_overdrive")
+    foreground: tab.deck.fg
+    fontFamily: tab.deck.fontFamily
+    onToggled: tab.service.setArmoury("panel_overdrive", checked ? 0 : 1)
   }
 
   // ---------- Keyboard and firmware ----------
   PanelSeparator { foreground: tab.deck.fg }
 
-  SectionLabel { text: "KEYBOARD AND FIRMWARE"; foreground: tab.deck.fg; fontFamily: tab.deck.fontFamily }
+  SectionHeader {
+    icon: "󰒓"
+    title: "KEYBOARD AND FIRMWARE"
+    foreground: tab.deck.fg
+    fontFamily: tab.deck.fontFamily
+  }
 
   SwitchRow {
     width: parent.width
-    readonly property bool available: !!(tab.status && tab.status.fnlock && tab.status.fnlock.available)
-    interactive: available
+    interactive: tab.fnlockAvailable
+    icon: "󰌾"
     label: "FN-lock"
-    hint: available ? "Action row does its printed media actions; hold Fn for F1–F12. Shift+Esc toggles too"
-                    : "Not set up: needs the fnlock command (see the README)"
-    checked: available && tab.service ? !!tab.service.pick("fnlock", tab.status.fnlock.on) : false
+    hint: tab.fnlockAvailable ? "Action row does its printed media actions; hold Fn for F1–F12. Shift+Esc toggles too"
+                              : "Not set up: needs the fnlock command (see the README)"
+    checked: tab.fnlockAvailable && tab.service ? !!tab.service.pick("fnlock", tab.status.fnlock.on) : false
     foreground: tab.deck.fg
     fontFamily: tab.deck.fontFamily
     onToggled: tab.service.setFnlock(!checked)
@@ -144,6 +164,7 @@ Column {
   SwitchRow {
     width: parent.width
     visible: !!tab.armoury.boot_sound
+    icon: "󰕾"
     label: "Boot sound"
     hint: "The chime when the laptop powers on"
     checked: tab.armouryOn("boot_sound")
@@ -155,37 +176,33 @@ Column {
   // ---------- GPU ----------
   PanelSeparator { foreground: tab.deck.fg; visible: !!tab.status && tab.status.dgpu !== "absent" }
 
+  SectionHeader {
+    icon: "󰢮"
+    title: "GRAPHICS"
+    detail: tab.status ? ("Dedicated GPU " + Model.dgpuLabel(tab.status.dgpu)).toUpperCase() : ""
+    foreground: tab.deck.fg
+    fontFamily: tab.deck.fontFamily
+    visible: !!tab.status && tab.status.dgpu !== "absent"
+  }
+
   Item {
     width: parent.width
     height: Math.max(gpuButton.implicitHeight, gpuText.implicitHeight)
     visible: !!tab.status && tab.status.dgpu !== "absent"
 
-    Column {
+    Text {
       id: gpuText
       anchors.left: parent.left
       anchors.right: gpuButton.left
       anchors.rightMargin: Style.space(10)
       anchors.verticalCenter: parent.verticalCenter
-      spacing: Style.space(1)
-
-      Text {
-        textFormat: Text.PlainText
-        text: "Dedicated GPU " + (tab.status ? Model.dgpuLabel(tab.status.dgpu) : "")
-        color: tab.deck.fg
-        font.family: tab.deck.fontFamily
-        font.pixelSize: Style.font.bodySmall
-      }
-
-      Text {
-        width: parent.width
-        textFormat: Text.PlainText
-        wrapMode: Text.Wrap
-        text: "Asleep costs about 0 W. Switching modes needs a reboot"
-        color: tab.deck.fg
-        opacity: 0.55
-        font.family: tab.deck.fontFamily
-        font.pixelSize: Style.font.caption
-      }
+      textFormat: Text.PlainText
+      wrapMode: Text.Wrap
+      text: "Hybrid mode lets the NVIDIA GPU sleep at about 0 W when nothing uses it. Switching modes needs a reboot."
+      color: tab.deck.fg
+      opacity: 0.55
+      font.family: tab.deck.fontFamily
+      font.pixelSize: Style.font.caption
     }
 
     Button {
@@ -193,6 +210,7 @@ Column {
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
       text: "Switch mode…"
+      iconText: "󰢮"
       tooltipText: "Opens Omarchy's hybrid GPU switch in a terminal"
       fontSize: Style.font.bodySmall
       foreground: tab.deck.fg

@@ -8,9 +8,9 @@ import "Model.js" as Model
 // Headless half of ROG Deck. It stays loaded whether or not the bar widget
 // is placed: it owns the one status poller every panel reads from, runs
 // actions through bin/rog-deck, keeps the settings file, and does the jobs
-// that must happen with the panel closed: keyboard auto-off, putting the
-// AniMe image and FN-lock back after login, following the charger for the
-// Auto refresh rate, and re-applying the keyboard effect after a theme change.
+// that must happen with the panel closed: keyboard auto-off, putting FN-lock
+// back after login, following the charger for the Auto refresh rate, and
+// re-applying the keyboard effect after a theme change.
 // It also answers `omarchy-shell io.github.t3lluz.rog-deck …`.
 Item {
   id: root
@@ -46,10 +46,6 @@ Item {
   readonly property string activeProfile: String(pick("profile", status && status.profile ? status.profile.active || "" : ""))
   readonly property bool kbdIdleArmed: settingsLoaded && settings.kbdIdle.enabled && settings.kbdIdle.timeout > 0
     && !(settings.kbdIdle.keepOnAc && !UPower.onBattery)
-  readonly property string animeContent: settings.anime.content
-  readonly property bool animeGifWanted: settingsLoaded && animeContent === "custom"
-    && /\.gif$/i.test(settings.anime.customPath || "")
-    && !!(status && status.anime && pick("anime.enabled", status.anime.enabled))
 
   // ---------------------------------------------------------------- state
 
@@ -105,20 +101,22 @@ Item {
     var fn = settings.fnlock
     if (status.fnlock && status.fnlock.available && fn && (fn === "on") !== status.fnlock.on)
       run(["fnlock", fn])
-    if (settings.anime.content === "static" || settings.anime.content === "custom") pushAnimeImage()
+    // ROG Deck shows only the firmware animations. If an image from an
+    // earlier version or another tool switched them off, bring them back.
+    var a = status.anime
+    if (a && a.enabled && !a.builtinsEnabled) {
+      var b = Model.animeBuiltins(a)
+      run(["anime", "builtins", b.boot, b.awake, b.sleep, b.shutdown])
+    }
     applyRefreshMode()
   }
 
-  // Keep the saved FN-lock choice in step with Shift+Esc, and re-push a
-  // custom AniMe image when asusd brought its built-ins back (resume does).
+  // Keep the saved FN-lock choice in step with Shift+Esc.
   function syncFromStatus() {
     if (status.fnlock && status.fnlock.available && !actionProc.running && actionQueue.length === 0) {
       var now = status.fnlock.on ? "on" : "off"
       if (settings.fnlock !== now) saveSetting(["fnlock"], now)
     }
-    var a = status.anime
-    var imageContent = settings.anime.content === "static" || settings.anime.content === "custom"
-    if (a && a.enabled && a.builtinsEnabled && imageContent && !animeRepush.running) animeRepush.start()
   }
 
   // ------------------------------------------------------------- settings
@@ -250,7 +248,6 @@ Item {
   function setAnimeEnabled(on) {
     setOptimistic("anime.enabled", on)
     run(["anime", on ? "on" : "off"])
-    if (on && (animeContent === "static" || animeContent === "custom")) pushAnimeImage()
   }
 
   function setAnimeBrightness(level) {
@@ -263,59 +260,18 @@ Item {
     run(["anime", "option", option, on ? "on" : "off"])
   }
 
-  // content: banner | logo | static | custom
-  function setAnimeContent(content, customPath) {
-    setOptimistic("anime.content", content)
-    saveSetting(["anime", "content"], content)
-    if (customPath !== undefined) saveSetting(["anime", "customPath"], customPath)
-    if (content === "banner" || content === "logo") {
-      var b = Model.animeBuiltins(status ? status.anime : null, "awake",
-        content === "logo" ? "RogLogoGlitch" : "BinaryBannerScroll")
-      setOptimistic("anime.awake", b.awake)
-      run(["anime", "builtins", b.boot, b.awake, b.sleep, b.shutdown])
-    } else {
-      pushAnimeImage()
-    }
+  // What shows while awake: "banner" or "logo".
+  function setAnimeContent(content) {
+    var choice = Model.ANIME_CONTENT.filter(function(c) { return c.value === content })[0]
+    if (!choice) return
+    setOptimistic("anime.awake", choice.builtin)
+    setAnimeBuiltin("awake", choice.builtin)
   }
 
   function setAnimeBuiltin(slot, name) {
     var b = Model.animeBuiltins(status ? status.anime : null, slot, name)
     setOptimistic("anime." + slot, name)
-    // While an image is showing, only record the choice: applying it would
-    // swap the image for the firmware animation.
-    var imageShowing = animeContent === "static" || animeContent === "custom"
-    run(["anime", "builtins", b.boot, b.awake, b.sleep, b.shutdown].concat(imageShowing ? ["store"] : []))
-  }
-
-  function pushAnimeImage() {
-    if (animeContent === "static") {
-      run(["anime", "image", "logo"].concat(Model.animePlacementArgs(settings.anime.placement.static)))
-    } else if (animeContent === "custom" && settings.anime.customPath) {
-      // A GIF plays for as long as its asusctl runs: animeGifProc owns it.
-      if (/\.gif$/i.test(settings.anime.customPath)) {
-        animeGifProc.running = false
-        animeGifRestart.restart()
-      } else {
-        run(["anime", "image", settings.anime.customPath].concat(Model.animePlacementArgs(settings.anime.placement.custom)))
-      }
-    }
-  }
-
-  // One placement value of the image showing now (scale, x, y, angle, bright).
-  function setAnimePlacement(field, value) {
-    if (animeContent !== "static" && animeContent !== "custom") return
-    saveSetting(["anime", "placement", animeContent, field], value)
-    pushAnimeImage()
-  }
-
-  function resetAnimePlacement() {
-    if (animeContent !== "static" && animeContent !== "custom") return
-    saveSetting(["anime", "placement", animeContent], Model.animePlacementDefaults(animeContent))
-    pushAnimeImage()
-  }
-
-  function pickAnimeImage() {
-    if (!imagePicker.running) imagePicker.running = true
+    run(["anime", "builtins", b.boot, b.awake, b.sleep, b.shutdown])
   }
 
   // Battery, firmware, display, FN-lock ---------------------------------
@@ -419,37 +375,6 @@ Item {
   }
 
   Process {
-    id: animeGifProc
-    command: [root.backend, "anime", "image", root.settings.anime.customPath || ""]
-      .concat(Model.animePlacementArgs(root.settings.anime.placement.custom))
-    onExited: function(code) {
-      // Ended on its own (asusd restart, unplug): start it again if wanted.
-      if (root.animeGifWanted) animeGifRestart.restart()
-    }
-  }
-
-  Timer {
-    id: animeGifRestart
-    interval: 800
-    onTriggered: if (root.animeGifWanted && !animeGifProc.running) animeGifProc.running = true
-  }
-
-  onAnimeGifWantedChanged: if (!animeGifWanted) animeGifProc.running = false
-
-  // The Omarchy image picker overlay, pointed at ~/Pictures (PNG and GIF).
-  Process {
-    id: imagePicker
-    command: ["bash", "-c", "f=$(zenity --file-selection --title='AniMe image' --file-filter='Images | *.png *.gif *.PNG *.GIF' 2>/dev/null) && printf '%s' \"$f\""]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        var path = text.trim()
-        if (path) root.setAnimeContent("custom", path)
-      }
-    }
-  }
-
-  Process {
     id: mkdirProc
     command: ["mkdir", "-p", root.configDir]
     running: true
@@ -493,15 +418,6 @@ Item {
     id: themeReapply
     interval: 1500
     onTriggered: root.applyLighting()
-  }
-
-  Timer {
-    id: animeRepush
-    interval: 3000
-    onTriggered: {
-      var a = root.status ? root.status.anime : null
-      if (a && a.enabled && a.builtinsEnabled) root.pushAnimeImage()
-    }
   }
 
   Timer {

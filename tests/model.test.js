@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, animePlacementDefaults, animePlacementArgs, formatSeconds }")()
+const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, formatSeconds }")()
 
 // Trimmed from a real `bin/rog-deck status` on a GA402NV.
 const status = {
@@ -76,10 +76,10 @@ assert.strictEqual(Model.tooltip(status), "Silent mode\nCPU 77°  GPU 65°\nFans
 
 // settings
 const merged = Model.mergeSettings('{"kbdIdle":{"timeout":30,"enabled":"yes"},"refresh":"auto","bogus":1,"anime":{"content":"static"}}')
+assert.strictEqual(merged.anime, undefined, "old AniMe image settings are dropped")
 assert.strictEqual(merged.kbdIdle.timeout, 30)
 assert.strictEqual(merged.kbdIdle.enabled, true, "wrong-typed values keep the default")
 assert.strictEqual(merged.refresh, "auto")
-assert.strictEqual(merged.anime.content, "static")
 assert.strictEqual(merged.bogus, undefined)
 assert.deepStrictEqual(Model.mergeSettings("not json"), Model.defaultSettings())
 assert.strictEqual(Model.cleanHex("#79818A\n"), "79818a")
@@ -108,16 +108,10 @@ assert.deepStrictEqual(Model.animeBuiltins(null, "sleep", "BannerSwipe"),
   { boot: "GlitchConstruction", awake: "BinaryBannerScroll", sleep: "BannerSwipe", shutdown: "SeeYa" })
 const anime = { builtinsEnabled: true, builtins: { boot: "StaticEmergence", awake: "RogLogoGlitch", sleep: "Starfield", shutdown: "GlitchOut" } }
 assert.strictEqual(Model.animeBuiltins(anime, "shutdown", "SeeYa").awake, "RogLogoGlitch", "other slots keep their value")
-assert.strictEqual(Model.animeContent("static", anime), "logo", "running built-ins win")
-assert.strictEqual(Model.animeContent("custom", { builtinsEnabled: false }), "custom")
-assert.strictEqual(Model.animeContent("banner", { builtinsEnabled: false }), "static")
+assert.strictEqual(Model.animeContent(anime), "logo")
+assert.strictEqual(Model.animeContent({ builtins: { awake: "BinaryBannerScroll" } }), "banner")
+assert.strictEqual(Model.animeContent(null), "banner")
 
-assert.deepStrictEqual(Model.animePlacementArgs(Model.animePlacementDefaults("static")),
-  ["--scale", "1.25", "--x", "0", "--y", "-0.8", "--angle", "0", "--bright", "100"])
-assert.deepStrictEqual(Model.animePlacementArgs({ scale: 0.333, x: 1.236, y: -2, angle: 45.4, bright: 80 }),
-  ["--scale", "0.33", "--x", "1.24", "--y", "-2", "--angle", "45", "--bright", "80"])
-assert.strictEqual(Model.mergeSettings('{"anime":{"placement":{"custom":{"scale":2}}}}').anime.placement.custom.scale, 2)
-assert.strictEqual(Model.mergeSettings('{"anime":{"placement":{"custom":{"scale":2}}}}').anime.placement.static.y, -0.8)
 assert.strictEqual(Model.formatSeconds(45), "45 s")
 assert.strictEqual(Model.formatSeconds(60), "1 min")
 assert.strictEqual(Model.formatSeconds(90), "1 min 30 s")

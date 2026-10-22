@@ -19,10 +19,8 @@ calls the user's own `fnlock` tool, which carries its own sudoers rule.
 
   rog-deck anime on|off
   rog-deck anime brightness <0-3>
-  rog-deck anime builtins <boot> <awake> <sleep> <shutdown> [store]
+  rog-deck anime builtins <boot> <awake> <sleep> <shutdown>
   rog-deck anime option <unplugged|suspended|lid> <on|off>
-  rog-deck anime image <path|logo> [--scale 1] [--x 0] [--y 0] [--angle 0] [--bright 100]
-                                           PNG, or GIF (keeps running while it plays)
 
   rog-deck battery limit <20-100>
   rog-deck battery oneshot
@@ -39,7 +37,6 @@ calls the user's own `fnlock` tool, which carries its own sudoers rule.
 
 import glob
 import json
-import math
 import os
 import shutil
 import subprocess
@@ -51,8 +48,6 @@ STATE_HOME = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/st
 RUNTIME = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
 OMARCHY_PROFILES = os.path.join(STATE_HOME, "omarchy", "powerprofiles")
 KBD_IDLE_FILE = os.path.join(RUNTIME, "rog-deck", "kbd-idle")
-HERE = os.path.dirname(os.path.realpath(__file__))
-STATIC_LOGO = os.path.join(HERE, "..", "assets", "anime", "rog-logo-static.png")
 
 # Display order for the mode tiles, quietest first.
 PROFILE_ORDER = ["power-saver", "balanced", "performance"]
@@ -606,63 +601,23 @@ def anime(args):
         if not 0 <= level <= 3:
             fail("brightness must be 0-3")
         set_property(path, "xyz.ljones.Anime", "Brightness", "u", level)
-    elif command == "builtins" and len(args) in (5, 6):
-        # "store" keeps whatever is on the panel now (a custom image) and only
-        # records the animations for when the built-ins run again.
-        store = len(args) == 6 and args[5] == "store"
+    elif command == "builtins" and len(args) == 5:
         cmd = ["asusctl", "anime", "set-builtins"]
-        for slot, name in zip(["boot", "awake", "sleep", "shutdown"], args[1:5]):
+        for slot, name in zip(["boot", "awake", "sleep", "shutdown"], args[1:]):
             if name not in ANIME_BUILTINS[slot]:
                 fail("%s animation must be one of: %s" % (slot, ", ".join(ANIME_BUILTINS[slot])))
             cmd += ["--" + slot, name]
-        act(cmd + ["--set", "false" if store else "true"])
-        if not store:
-            # set-builtins alone leaves the panel dark if a custom image
-            # turned the built-in animations off; switch them back on.
-            act(["asusctl", "anime", "--enable-powersave-anim", "true"])
-            act(["asusctl", "anime", "--enable-display", "true"])
+        act(cmd + ["--set", "true"])
+        # set-builtins alone leaves the panel dark if the built-in animations
+        # were switched off (an image from another tool); switch them back on.
+        act(["asusctl", "anime", "--enable-powersave-anim", "true"])
+        act(["asusctl", "anime", "--enable-display", "true"])
     elif command == "option" and len(args) == 3:
         if args[1] not in ANIME_OPTIONS:
             fail("option must be one of: " + ", ".join(ANIME_OPTIONS))
         set_property(path, "xyz.ljones.Anime", ANIME_OPTIONS[args[1]], "b", on_off(args[2]))
-    elif command == "image" and len(args) >= 2:
-        anime_image(args[1], parse_opts(args[2:], {"--scale", "--x", "--y", "--angle", "--bright"}))
     else:
         fail("unknown anime command: " + " ".join(args))
-
-
-def anime_image(image, opts):
-    """Show a PNG or GIF. Placement is asusctl's: scale 1 fits the panel,
-    x/y move it in the panel's physical units (about 27 wide, 17 tall),
-    angle is in degrees here, bright in percent."""
-    logo = image == "logo"
-    image = STATIC_LOGO if logo else os.path.expanduser(image)
-    if not os.path.isfile(image):
-        fail("no such image: " + image)
-    try:
-        # Defaults put the bundled logo where the firmware's RogLogoGlitch sits.
-        scale = float(opts.get("--scale", 1.25 if logo else 1.0))
-        x = float(opts.get("--x", 0.0))
-        y = float(opts.get("--y", -0.8 if logo else 0.0))
-        angle = math.radians(float(opts.get("--angle", 0.0)))
-        bright = float(opts.get("--bright", 100)) / 100
-    except ValueError:
-        fail("placement values must be numbers")
-    if not (0.1 <= scale <= 5 and 0 <= bright <= 1):
-        fail("scale must be 0.1-5 and bright 0-100")
-    kind = "gif" if image.lower().endswith(".gif") else "image"
-    # Built-in animations override a custom image unless they are off; end
-    # on enable-display so the panel is left lit.
-    act(["asusctl", "anime", "--enable-powersave-anim", "false"])
-    act(["asusctl", "anime", "--enable-display", "true"])
-    cmd = ["asusctl", "anime", kind, "--path", image, "--scale", "%.3f" % scale,
-           "--x-pos", "%.3f" % x, "--y-pos", "%.3f" % y, "--angle", "%.4f" % angle, "--bright", "%.3f" % bright]
-    if kind == "gif":
-        # asusctl plays a GIF itself, frame by frame, for as long as it
-        # runs. Become that process so the caller can keep it alive or kill it.
-        sys.stdout.flush()
-        os.execvp(cmd[0], cmd + ["--loops", "0"])
-    act(cmd, timeout=20)
 
 
 # ----------------------------------------------------- battery, firmware

@@ -112,8 +112,6 @@ function defaultSettings() {
     kbdLight: { managed: false, rgb: false, followTheme: true, effect: "static",
                 colour: "ffffff", colour2: "000000", speed: "med", direction: "right" },
     kbdLastLevel: 2,
-    anime: { content: "banner", customPath: "", placement: {
-      static: animePlacementDefaults("static"), custom: animePlacementDefaults("custom") } },
     fnlock: null,
     refresh: null
   }
@@ -230,28 +228,16 @@ var ANIME_BUILTIN_CHOICES = {
   shutdown: [{ value: "SeeYa", label: "See ya" }, { value: "GlitchOut", label: "Glitch out" }]
 }
 
-var ANIME_CONTENT = [
-  { value: "banner", label: "Banner", hint: "Scrolling ROG banner (firmware)" },
-  { value: "logo", label: "Logo", hint: "Glitching ROG eye (firmware)" },
-  { value: "static", label: "Static", hint: "The ROG eye, still" },
-  { value: "custom", label: "Image", hint: "Your own PNG or GIF" }
+var ANIME_SLOTS = [
+  { slot: "boot", label: "Startup", icon: "󱓞" },
+  { slot: "sleep", label: "Sleep", icon: "󰒲" },
+  { slot: "shutdown", label: "Shutdown", icon: "󰐥" }
 ]
 
-// Where an image sits on the panel, in asusctl's terms: scale 1 fits the
-// panel, x/y in its physical units (about 27 wide, 17 tall), angle in
-// degrees, bright in percent. The logo default matches RogLogoGlitch.
-function animePlacementDefaults(content) {
-  return content === "static"
-    ? { scale: 1.25, x: 0, y: -0.8, angle: 0, bright: 100 }
-    : { scale: 1, x: 0, y: 0, angle: 0, bright: 100 }
-}
-
-function animePlacementArgs(placement) {
-  var p = placement || animePlacementDefaults("custom")
-  function fixed(v, digits) { return String(Math.round(Number(v) * Math.pow(10, digits)) / Math.pow(10, digits)) }
-  return ["--scale", fixed(p.scale, 2), "--x", fixed(p.x, 2), "--y", fixed(p.y, 2),
-          "--angle", fixed(p.angle, 0), "--bright", fixed(p.bright, 0)]
-}
+var ANIME_CONTENT = [
+  { value: "banner", label: "Banner", icon: "󰊄", hint: "Scrolling ROG banner", builtin: "BinaryBannerScroll" },
+  { value: "logo", label: "ROG Logo", icon: "󰈈", hint: "The glitching ROG eye", builtin: "RogLogoGlitch" }
+]
 
 // All four built-in slots, with one changed: asusd sets them together.
 function animeBuiltins(anime, slot, name) {
@@ -262,11 +248,9 @@ function animeBuiltins(anime, slot, name) {
   return result
 }
 
-// What the panel is showing: built-ins win when they are running.
-function animeContent(saved, anime) {
-  if (anime && anime.builtinsEnabled)
-    return anime.builtins && anime.builtins.awake === "RogLogoGlitch" ? "logo" : "banner"
-  return saved === "custom" ? "custom" : "static"
+// What the panel shows while awake: the firmware's awake animation.
+function animeContent(anime) {
+  return anime && anime.builtins && anime.builtins.awake === "RogLogoGlitch" ? "logo" : "banner"
 }
 
 // -------------------------------------------------------------- display

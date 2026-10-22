@@ -11,12 +11,13 @@ Click it for the panel. Tabs appear only for hardware your laptop has.
 ## Panel
 
 **Main**
-- Silent, Balanced and Turbo power modes.
-- Fan speeds, battery draw, and whether the dedicated GPU is awake (read
-  without waking it).
+- Silent, Balanced and Turbo power modes, plus the mode Omarchy keeps for
+  AC and for battery.
+- Live tiles: both fans, package power, battery, the dedicated GPU (read
+  without waking it) and the screen rate.
 - Keyboard light slider, plus AniMe and FN-lock switches.
 
-**Lighting**
+**Keys** (keyboard lighting)
 - Brightness slider.
 - Auto-off after a set time without typing or touchpad use: slider plus exact
   seconds, from 5 s to 10 min. Optionally stays on while plugged in, or dims
@@ -28,12 +29,9 @@ Click it for the panel. Tabs appear only for hardware your laptop has.
 
 **AniMe**
 - Display on/off.
-- Show: Banner, Logo (the firmware's glitching eye), Static (the same eye,
-  still) or your own PNG/GIF.
+- Show the firmware's Banner or ROG Logo.
 - Brightness slider.
-- For Static and images: size, left/right, up/down, rotation and image
-  brightness, plus Reset.
-- Boot, sleep and shutdown animations (Glitch/Emerge, Starfield/Swipe,
+- Startup, sleep and shutdown animations (Glitch/Emerge, Starfield/Swipe,
   See ya/Glitch out).
 - Turn off on battery, when the laptop sleeps, or when the lid closes.
 
@@ -66,8 +64,8 @@ Click it for the panel. Tabs appear only for hardware your laptop has.
 - **Mode switching on plug/unplug is left to Omarchy.** Omarchy and asusd both
   switch modes when the charger changes, and they race. On first run ROG Deck
   turns asusd's switching off.
-- **After login or resume.** Puts back the FN-lock state and the Static or
-  custom AniMe image (asusd doesn't keep images). Moves the Auto refresh rate
+- **After login.** Puts back the FN-lock state, and the firmware AniMe
+  animations if another tool left an image up. Moves the Auto refresh rate
   with the charger.
 - **After an Omarchy theme change.** Re-applies your keyboard effect, since the
   theme switcher resets the keyboard to a static colour.
@@ -83,7 +81,6 @@ omarchy plugin add https://github.com/T3lluz/omarchy-rog-deck.git --enable
 Needs:
 - `asusd` running (Omarchy installs `asusctl` on ROG laptops).
 - `power-profiles-daemon` and `brightnessctl`.
-- `zenity`, for picking an AniMe image.
 
 Nothing in the plugin needs root.
 
@@ -129,9 +126,6 @@ Some details that matter:
 - **Effect changes.** The keyboard can keep animating an old effect while
   asusd reports the new one. So `rog-deck aura` blanks the keyboard, writes
   the effect, then re-sends the power state and brightness.
-- **AniMe images.** A custom image only sticks with the firmware animations
-  off, so boot/sleep/shutdown animations play only with Banner or Logo.
-  Changing those animations while an image shows just stores them.
 - **Refresh rate.** Hyprland 0.56's Lua config rejects
   `hyprctl keyword monitor`, so the rate goes through
   `hyprctl eval "hl.monitor({...})"`. If hyprmoncfg's daemon has an active
@@ -153,7 +147,7 @@ omarchy plugin validate .
 ## Credits
 
 - [Power-Deck](https://github.com/T3lluz/Power-Deck): AniMe, fan curve and
-  keyboard-idle behaviour, the static logo, the bar-style curve editor.
+  keyboard-idle behaviour, the bar-style curve editor.
 - [omarchy-asus](https://github.com/moneytosms/omarchy-asus) by moneytosms:
   hardware-gated tabs, the scrollable panel with every tab built up front, and
   the Hyprland 0.56 refresh-rate path.

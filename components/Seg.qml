@@ -13,6 +13,8 @@ Row {
   property color foreground: Commons.Color.foreground
   property string fontFamily: Style.font.family
   property bool interactive: true
+  // Off for a borderless row where only the chosen option is filled (tabs).
+  property bool bordered: true
 
   signal picked(var value)
 
@@ -34,7 +36,7 @@ Row {
       fontSize: Style.font.bodySmall
       foreground: seg.foreground
       fontFamily: seg.fontFamily
-      bordered: true
+      bordered: seg.bordered
       active: seg.value === modelData.value
       opacity: seg.interactive ? 1 : 0.45
       onClicked: if (seg.interactive && seg.value !== modelData.value) seg.picked(modelData.value)

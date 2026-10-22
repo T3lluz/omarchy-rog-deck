@@ -3,11 +3,12 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 
-// One-line label (and optional hint) with a switch at the end. Lighter
-// than qs.Ui Toggle, so a tab can stack several.
+// One row: an icon, a label (and optional hint), and a switch at the end.
+// Lighter than qs.Ui Toggle, so a section can stack several.
 Item {
   id: row
 
+  property string icon: ""
   property string label: ""
   property string hint: ""
   property bool checked: false
@@ -22,9 +23,26 @@ Item {
   implicitHeight: Math.max(toggle.implicitHeight, labels.implicitHeight)
   opacity: interactive ? 1 : 0.45
 
+  Text {
+    id: iconText
+    anchors.left: parent.left
+    anchors.leftMargin: visible ? Style.space(8) : 0
+    anchors.verticalCenter: parent.verticalCenter
+    visible: row.icon !== ""
+    width: visible ? Style.space(22) : 0
+    horizontalAlignment: Text.AlignHCenter
+    textFormat: Text.PlainText
+    text: row.icon
+    color: row.foreground
+    opacity: row.checked ? 1 : 0.6
+    font.family: row.fontFamily
+    font.pixelSize: Style.font.title
+  }
+
   Column {
     id: labels
-    anchors.left: parent.left
+    anchors.left: iconText.right
+    anchors.leftMargin: iconText.visible ? Style.space(10) : 0
     anchors.right: toggle.left
     anchors.rightMargin: Style.space(10)
     anchors.verticalCenter: parent.verticalCenter
@@ -37,7 +55,7 @@ Item {
       color: row.foreground
       elide: Text.ElideRight
       font.family: row.fontFamily
-      font.pixelSize: Style.font.bodySmall
+      font.pixelSize: Style.font.body
     }
 
     Text {
@@ -54,7 +72,10 @@ Item {
   }
 
   MouseArea {
-    anchors.fill: labels
+    anchors.left: parent.left
+    anchors.right: toggle.left
+    anchors.top: parent.top
+    anchors.bottom: parent.bottom
     enabled: row.interactive && !row.busy
     cursorShape: Qt.PointingHandCursor
     onClicked: row.toggled()

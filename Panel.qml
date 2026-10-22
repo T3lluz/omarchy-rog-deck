@@ -39,11 +39,11 @@ Panel {
 
   // Tabs appear only for hardware the laptop has.
   readonly property var tabs: {
-    var t = [{ value: "main", label: "Main" }]
-    if (status && status.keyboard && status.keyboard.brightness !== null) t.push({ value: "lighting", label: "Lighting" })
-    if (status && status.anime) t.push({ value: "anime", label: "AniMe" })
-    if (status && status.fans && (status.fans.cpu !== null || status.fans.gpu !== null)) t.push({ value: "fans", label: "Fans" })
-    t.push({ value: "system", label: "System" })
+    var t = [{ value: "main", label: "Main", icon: "󰕮" }]
+    if (status && status.keyboard && status.keyboard.brightness !== null) t.push({ value: "lighting", label: "Keys", icon: "󰌌", hint: "Keyboard lighting" })
+    if (status && status.anime) t.push({ value: "anime", label: "AniMe", icon: "󱗼", hint: "AniMe Matrix" })
+    if (status && status.fans && (status.fans.cpu !== null || status.fans.gpu !== null)) t.push({ value: "fans", label: "Fans", icon: "󰈐" })
+    t.push({ value: "system", label: "System", icon: "󰒓" })
     return t
   }
   readonly property string currentTab: {
@@ -235,6 +235,7 @@ Panel {
         Seg {
           width: parent.width
           visible: root.ready
+          bordered: false
           options: root.tabs
           value: root.currentTab
           foreground: root.fg

@@ -16,6 +16,8 @@ Column {
   property real step: 1
   property int tickCount: 0
   property bool showField: false
+  // Off when a section header above already shows the value.
+  property bool showValue: true
   property string suffix: ""
   property var format: null
   property bool interactive: true
@@ -40,7 +42,7 @@ Column {
   Item {
     width: parent.width
     height: Math.max(labelText.implicitHeight, valueText.implicitHeight)
-    visible: field.label !== "" || !field.showField
+    visible: field.label !== "" || (!field.showField && field.showValue)
 
     Text {
       id: labelText

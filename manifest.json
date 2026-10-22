@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.t3lluz.rog-deck",
+  "name": "ROG Deck",
+  "version": "0.1.0",
+  "author": "fredde",
+  "license": "MIT",
+  "homepage": "https://github.com/T3lluz/omarchy-rog-deck",
+  "description": "Control panel for ASUS ROG laptops: power modes, temperatures and fans, keyboard lighting with auto-off, AniMe Matrix, FN-lock, battery limit and display, from the Omarchy bar.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "ROG Deck",
+    "description": "Power mode in the bar (scroll to switch), with temperatures and fans in the tooltip and a full ROG control panel on click.",
+    "category": "System",
+    "aliases": ["asus", "rog", "armoury", "anime", "aura", "fan", "fnlock", "keyboard"],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "barTemps": false,
+      "barFans": false
+    },
+    "schema": [
+      {
+        "key": "barTemps",
+        "type": "boolean",
+        "label": "Show CPU temperature in the bar",
+        "defaultValue": false
+      },
+      {
+        "key": "barFans",
+        "type": "boolean",
+        "label": "Show fan speed in the bar",
+        "description": "The fastest of the CPU and GPU fans.",
+        "defaultValue": false
+      }
+    ]
+  }
+}

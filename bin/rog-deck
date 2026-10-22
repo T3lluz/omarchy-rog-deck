@@ -1,0 +1,365 @@
+#!/usr/bin/env python3
+"""rog-deck - backend for the ROG Deck Omarchy plugin.
+
+Everything goes through interfaces a normal user may touch: asusd on the
+system bus, power-profiles-daemon (via omarchy-powerprofiles-set), logind
+(brightnessctl), sysfs reads and hyprctl. Nothing here needs root.
+
+  rog-deck status                    one JSON snapshot of everything the panel shows
+  rog-deck profile <name|next|prev>  set the power mode for the current power source
+  rog-deck takeover                  stop asusd switching profiles on plug/unplug
+"""
+
+import glob
+import json
+import os
+import shutil
+import subprocess
+import sys
+
+ASUSD = "xyz.ljones.Asusd"
+ROOT = "/xyz/ljones"
+STATE_HOME = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+OMARCHY_PROFILES = os.path.join(STATE_HOME, "omarchy", "powerprofiles")
+
+# Display order for the mode tiles, quietest first.
+PROFILE_ORDER = ["power-saver", "balanced", "performance"]
+
+
+def run(cmd, timeout=3):
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return out.stdout if out.returncode == 0 else None
+
+
+def read(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def read_int(path):
+    value = read(path)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def busctl(*args):
+    out = run(["busctl", "--system", "-j", *args])
+    if out is None:
+        return None
+    try:
+        return json.loads(out)
+    except ValueError:
+        return None
+
+
+def get_all(path, interface, service=ASUSD):
+    """All properties of one D-Bus object as a plain dict, or None."""
+    reply = busctl("call", service, path, "org.freedesktop.DBus.Properties", "GetAll", "s", interface)
+    if not reply or not reply.get("data"):
+        return None
+    return {key: unwrap(value) for key, value in reply["data"][0].items()}
+
+
+def unwrap(value):
+    """Strip busctl's {"type", "data"} variant wrappers, recursively."""
+    if isinstance(value, dict) and set(value) == {"type", "data"}:
+        return unwrap(value["data"])
+    if isinstance(value, dict):
+        return {key: unwrap(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [unwrap(item) for item in value]
+    return value
+
+
+def asusd_objects():
+    reply = busctl("tree", "--list", ASUSD)
+    if isinstance(reply, list):
+        return reply
+    out = run(["busctl", "--system", "tree", "--list", ASUSD])
+    return out.split() if out else []
+
+
+def hwmon(name):
+    for path in glob.glob("/sys/class/hwmon/hwmon*"):
+        if read(path + "/name") == name:
+            return path
+    return None
+
+
+def on_ac():
+    for supply in glob.glob("/sys/class/power_supply/*"):
+        if read(supply + "/type") in ("Mains", "USB") and read(supply + "/online") == "1":
+            return True
+    return False
+
+
+def hex_colour(rgb):
+    try:
+        return "%02x%02x%02x" % tuple(rgb)
+    except (TypeError, ValueError):
+        return None
+
+
+# ---------------------------------------------------------------- status
+
+def profile_status():
+    ppd = get_all("/org/freedesktop/UPower/PowerProfiles", "org.freedesktop.UPower.PowerProfiles",
+                  "org.freedesktop.UPower.PowerProfiles") or {}
+    names = [p.get("Profile") for p in ppd.get("Profiles") or []]
+    choices = [name for name in PROFILE_ORDER if name in names]
+    platform = get_all(ROOT, "xyz.ljones.Platform") or {}
+    return {
+        "active": ppd.get("ActiveProfile"),
+        "choices": choices,
+        "saved": {
+            "ac": read(os.path.join(OMARCHY_PROFILES, "ac")),
+            "battery": read(os.path.join(OMARCHY_PROFILES, "battery")),
+        },
+        "asusdAutoSwitch": bool(platform.get("ChangePlatformProfileOnAc")
+                                or platform.get("ChangePlatformProfileOnBattery")),
+    }
+
+
+def keyboard_status(objects):
+    led = "/sys/class/leds/asus::kbd_backlight"
+    status = {
+        "brightness": read_int(led + "/brightness"),
+        "max": read_int(led + "/max_brightness"),
+    }
+    aura_path = next((o for o in objects if o.startswith(ROOT + "/aura/") and not o.endswith("/anime")), None)
+    aura = get_all(aura_path, "xyz.ljones.Aura") if aura_path else None
+    if aura:
+        data = aura.get("LedModeData") or [None, None, None, None, None, None]
+        status.update({
+            "path": aura_path,
+            "mode": aura.get("LedMode"),
+            "modes": aura.get("SupportedBasicModes") or [],
+            "colour1": hex_colour(data[2]),
+            "colour2": hex_colour(data[3]),
+            "speed": data[4],
+            "direction": data[5],
+            "power": aura.get("LedPower"),
+        })
+    return status
+
+
+def anime_status(objects):
+    path = ROOT + "/aura/anime"
+    if path not in objects:
+        return None
+    anime = get_all(path, "xyz.ljones.Anime")
+    if not anime:
+        return None
+    builtins = anime.get("BuiltinAnimations") or [None] * 4
+    return {
+        "enabled": anime.get("EnableDisplay"),
+        "brightness": anime.get("Brightness"),
+        "builtinsEnabled": anime.get("BuiltinsEnabled"),
+        "builtins": dict(zip(["boot", "awake", "sleep", "shutdown"], builtins)),
+        "offWhenUnplugged": anime.get("OffWhenUnplugged"),
+        "offWhenSuspended": anime.get("OffWhenSuspended"),
+        "offWhenLidClosed": anime.get("OffWhenLidClosed"),
+    }
+
+
+def armoury_status(objects):
+    attrs = {}
+    prefix = ROOT + "/asus_armoury/"
+    for path in objects:
+        if not path.startswith(prefix):
+            continue
+        props = get_all(path, "xyz.ljones.AsusArmoury")
+        if not props or "current_value" not in (props.get("AvailableAttrs") or []):
+            continue
+        attrs[path[len(prefix):]] = {
+            "value": props.get("CurrentValue"),
+            "values": props.get("PossibleValues") or [],
+            "min": props.get("MinValue"),
+            "max": props.get("MaxValue"),
+        }
+    return attrs
+
+
+def dgpu_status():
+    """Runtime PM state of the discrete GPU, read without waking it."""
+    for dev in glob.glob("/sys/bus/pci/devices/*"):
+        if read(dev + "/vendor") != "0x10de" or not (read(dev + "/class") or "").startswith("0x03"):
+            continue
+        return {"state": read(dev + "/power/runtime_status") or "unknown", "path": dev}
+    return {"state": "absent", "path": None}
+
+
+def sensors(dgpu):
+    temps = {"cpu": None, "gpu": None, "gpuSource": None}
+    watts = {"igpu": None, "dgpu": None}
+    k10 = hwmon("k10temp") or hwmon("zenpower") or hwmon("coretemp")
+    if k10:
+        value = read_int(k10 + "/temp1_input")
+        temps["cpu"] = round(value / 1000, 1) if value is not None else None
+    amdgpu = hwmon("amdgpu")
+    if amdgpu:
+        power = read_int(amdgpu + "/power1_input") or read_int(amdgpu + "/power1_average")
+        watts["igpu"] = round(power / 1e6, 1) if power is not None else None
+    # Only ask nvidia-smi while the card is already awake: querying a
+    # suspended dGPU would wake it and cost battery.
+    if dgpu["state"] == "active" and shutil.which("nvidia-smi"):
+        out = run(["nvidia-smi", "--query-gpu=temperature.gpu,power.draw",
+                   "--format=csv,noheader,nounits"], timeout=2)
+        if out:
+            parts = [p.strip() for p in out.splitlines()[0].split(",")]
+            try:
+                temps["gpu"], temps["gpuSource"] = float(parts[0]), "nvidia"
+                watts["dgpu"] = float(parts[1])
+            except (ValueError, IndexError):
+                pass
+    if temps["gpu"] is None and amdgpu:
+        value = read_int(amdgpu + "/temp1_input")
+        if value is not None:
+            temps["gpu"], temps["gpuSource"] = round(value / 1000, 1), "amdgpu"
+    fans = {"cpu": None, "gpu": None, "mid": None}
+    asus = hwmon("asus")
+    if asus:
+        for n in range(1, 4):
+            label = read("%s/fan%d_label" % (asus, n))
+            if label:
+                fans[label.replace("_fan", "")] = read_int("%s/fan%d_input" % (asus, n))
+    return temps, watts, fans
+
+
+def battery_status():
+    bat = next(iter(sorted(glob.glob("/sys/class/power_supply/BAT*"))), None)
+    if not bat:
+        return None
+    power = read_int(bat + "/power_now")
+    if power is None:
+        current, voltage = read_int(bat + "/current_now"), read_int(bat + "/voltage_now")
+        if current is not None and voltage is not None:
+            power = current * voltage // 1_000_000
+    return {
+        "percent": read_int(bat + "/capacity"),
+        "status": read(bat + "/status"),
+        "limit": read_int(bat + "/charge_control_end_threshold"),
+        "watts": round(power / 1e6, 1) if power is not None else None,
+    }
+
+
+def display_status():
+    out = run(["hyprctl", "monitors", "-j"])
+    if not out:
+        return None
+    try:
+        monitors = json.loads(out)
+    except ValueError:
+        return None
+    panel = next((m for m in monitors if m.get("name", "").startswith("eDP")), None)
+    if not panel:
+        return None
+    size = "%dx%d" % (panel["width"], panel["height"])
+    rates = set()
+    for mode in panel.get("availableModes", []):
+        res, _, hz = mode.partition("@")
+        if res == size:
+            try:
+                rates.add(round(float(hz.rstrip("Hz"))))
+            except ValueError:
+                pass
+    return {"name": panel["name"], "refresh": round(panel.get("refreshRate", 0)), "rates": sorted(rates)}
+
+
+def fnlock_status():
+    tool = shutil.which("fnlock") or (os.path.expanduser("~/.local/bin/fnlock")
+                                      if os.access(os.path.expanduser("~/.local/bin/fnlock"), os.X_OK) else None)
+    if not tool:
+        return {"available": False, "on": False}
+    out = run([tool, "status"])
+    return {"available": True, "on": (out or "").strip() == "on"}
+
+
+def status():
+    objects = asusd_objects()
+    platform = get_all(ROOT, "xyz.ljones.Platform")
+    dgpu = dgpu_status()
+    temps, watts, fans = sensors(dgpu)
+    return {
+        "asusd": platform is not None,
+        "asusdVersion": platform.get("Version") if platform else None,
+        "model": read("/sys/class/dmi/id/product_name"),
+        "ac": on_ac(),
+        "profile": profile_status(),
+        "keyboard": keyboard_status(objects),
+        "anime": anime_status(objects),
+        "armoury": armoury_status(objects),
+        "dgpu": dgpu["state"],
+        "temps": temps,
+        "watts": watts,
+        "fans": fans,
+        "battery": battery_status(),
+        "display": display_status(),
+        "fnlock": fnlock_status(),
+    }
+
+
+# --------------------------------------------------------------- actions
+
+def set_profile(arg):
+    current = profile_status()
+    choices = current["choices"] or PROFILE_ORDER
+    aliases = {"quiet": "power-saver", "silent": "power-saver", "turbo": "performance"}
+    target = aliases.get(arg, arg)
+    if target in ("next", "prev"):
+        index = choices.index(current["active"]) if current["active"] in choices else 0
+        step = 1 if target == "next" else -1
+        target = choices[(index + step) % len(choices)]
+    if target not in choices:
+        fail("unknown profile: %s (choices: %s)" % (arg, ", ".join(choices)))
+    source = "ac" if on_ac() else "battery"
+    if subprocess.run(["omarchy-powerprofiles-set", source, target]).returncode != 0:
+        fail("omarchy-powerprofiles-set failed")
+    print(target)
+
+
+def takeover():
+    """Leave plug/unplug profile switching to Omarchy alone.
+
+    Omarchy's battery service and asusd both switch the profile when the
+    charger changes, each from its own memory, so whichever runs last wins.
+    """
+    for prop in ("ChangePlatformProfileOnAc", "ChangePlatformProfileOnBattery"):
+        result = subprocess.run(["busctl", "--system", "set-property", ASUSD, ROOT,
+                                 "xyz.ljones.Platform", prop, "b", "false"],
+                                capture_output=True, text=True)
+        if result.returncode != 0:
+            fail("could not set %s: %s" % (prop, result.stderr.strip()))
+    print("ok")
+
+
+def fail(message):
+    print("rog-deck: " + message, file=sys.stderr)
+    sys.exit(1)
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return
+    command, args = argv[0], argv[1:]
+    if command == "status":
+        print(json.dumps(status(), separators=(",", ":")))
+    elif command == "profile" and len(args) == 1:
+        set_profile(args[0])
+    elif command == "takeover":
+        takeover()
+    else:
+        fail("unknown command: " + " ".join(argv))
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

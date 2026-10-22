@@ -93,6 +93,24 @@ function dgpuLabel(state) {
   return state || "—"
 }
 
+// GPU modes, in tile order. bin/rog-deck lists the ones this laptop has.
+var GPU_MODES = [
+  { value: "integrated", label: "Integrated", icon: "󰌪", hint: "AMD only, NVIDIA powered off. Longest battery" },
+  { value: "hybrid", label: "Hybrid", icon: "󰢮", hint: "AMD drives the screen, NVIDIA wakes for games" },
+  { value: "dedicated", label: "Dedicated", icon: "󰓅", hint: "NVIDIA drives the screen directly (MUX). Lowest latency, most power" }
+]
+
+function gpuModes(gpu) {
+  var available = gpu && gpu.modes ? gpu.modes : []
+  return GPU_MODES.filter(function(m) { return available.indexOf(m.value) !== -1 })
+}
+
+function gpuModeInfo(value) {
+  for (var i = 0; i < GPU_MODES.length; i++)
+    if (GPU_MODES[i].value === value) return GPU_MODES[i]
+  return { value: value || "", label: value ? value.charAt(0).toUpperCase() + value.slice(1) : "Unknown", icon: "󰢮", hint: "" }
+}
+
 function batteryLine(battery, onAc) {
   if (!battery || battery.percent === null || battery.percent === undefined) return ""
   var text = battery.percent + "%"

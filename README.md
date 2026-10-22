@@ -50,7 +50,9 @@ Click it for the panel. Tabs appear only for hardware your laptop has.
 - Panel overdrive.
 - FN-lock.
 - Boot sound.
-- Dedicated GPU state, with a button for Omarchy's hybrid GPU switch.
+- GPU mode: Integrated (NVIDIA off), Hybrid, or Dedicated (MUX: NVIDIA drives
+  the built-in screen). A switch only takes hold on restart, so picking a mode
+  asks first, then restarts. Picking the running mode cancels a pending switch.
 
 ## What runs in the background
 
@@ -82,7 +84,9 @@ Needs:
 - `asusd` running (Omarchy installs `asusctl` on ROG laptops).
 - `power-profiles-daemon` and `brightnessctl`.
 
-Nothing in the plugin needs root.
+The only root step is Integrated GPU mode, which writes `/etc/supergfxd.conf`
+the same way Omarchy's own GPU switch does; that goes through `pkexec`, so you
+get a password prompt. Integrated also needs `supergfxctl`.
 
 FN-lock calls a `fnlock on|off|status` command on your `PATH` (or in
 `~/.local/bin`). On this G14 that's a small keyd setup: the Fn key never
@@ -101,6 +105,7 @@ omarchy-shell io.github.t3lluz.rog-deck toggleKeyboard  # keyboard light off / b
 omarchy-shell io.github.t3lluz.rog-deck fnlock toggle   # on | off | toggle
 omarchy-shell io.github.t3lluz.rog-deck anime toggle    # on | off | toggle
 omarchy-shell io.github.t3lluz.rog-deck openTab fans    # main | lighting | anime | fans | system
+omarchy-shell io.github.t3lluz.rog-deck gpu hybrid      # integrated | hybrid | dedicated; asks before restarting
 omarchy-shell io.github.t3lluz.rog-deck status          # JSON snapshot
 ```
 
@@ -131,6 +136,14 @@ Some details that matter:
   `hyprctl eval "hl.monitor({...})"`. If hyprmoncfg's daemon has an active
   profile, that profile is saved too, so the change sticks.
 - **GPU readings.** `nvidia-smi` is only asked while the dGPU is already awake.
+- **GPU modes.** The running mode comes from the hardware: no NVIDIA card (or
+  one parked on vfio-pci) is Integrated, an NVIDIA card driving the eDP panel
+  is Dedicated. asusd doesn't write `gpu_mux_mode` or `dgpu_disable` straight
+  away; it queues them (`QueuedGpuValue`) and its `asus-shutdown` helper writes
+  them on the way down, so the mode after restart is read from that queue plus
+  supergfxd's config. Integrated sets the MUX to Hybrid and supergfxd to
+  Integrated, with Omarchy's delayed supergfxd start and its sleep hook that
+  turns the dGPU back off after resume. The restart is `omarchy-system-reboot`.
 
 ## Development
 

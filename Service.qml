@@ -42,6 +42,8 @@ Item {
   property string themeColour: ""
   // The panel tab last shown; shared so every monitor's panel agrees.
   property string panelTab: "main"
+  // GPU mode waiting on the panel's restart prompt, or "".
+  property string gpuAsk: ""
 
   readonly property string activeProfile: String(pick("profile", status && status.profile ? status.profile.active || "" : ""))
   readonly property bool kbdIdleArmed: settingsLoaded && settings.kbdIdle.enabled && settings.kbdIdle.timeout > 0
@@ -309,8 +311,23 @@ Item {
     run(["fnlock", on ? "on" : "off"])
   }
 
-  function switchGpuMode() {
-    Quickshell.execDetached(["omarchy-launch-floating-terminal-with-presentation", "omarchy-toggle-hybrid-gpu"])
+  // GPU ------------------------------------------------------------------
+
+  // Queue a GPU mode for the next boot. With `restart`, reboot once it is
+  // queued; the panel asks before passing that.
+  function setGpuMode(mode, restart) {
+    setOptimistic("gpu.next", mode)
+    run(["gpu", "set", mode].concat(restart ? ["--restart"] : []))
+  }
+
+  // A switch only takes hold on restart, so the panel asks first. Picking the
+  // mode that is already running just cancels a pending switch.
+  function askGpuMode(mode) {
+    var gpu = status ? status.gpu : null
+    if (!gpu || gpu.modes.indexOf(mode) === -1) return false
+    if (mode === gpu.mode) setGpuMode(mode, false)
+    else gpuAsk = mode
+    return true
   }
 
   // Fans -----------------------------------------------------------------
@@ -493,6 +510,15 @@ Item {
     // Open the panel on one tab: main, lighting, anime, fans or system.
     function openTab(name: string): string {
       root.panelTab = name
+      if (root.shell) root.shell.summon(root.pluginId, "{}")
+      return "ok"
+    }
+    // Switch GPU mode: integrated, hybrid or dedicated. Opens the panel to
+    // confirm the restart when one is needed.
+    function gpu(mode: string): string {
+      if (!root.askGpuMode(mode)) return "unknown"
+      if (root.gpuAsk === "") return "ok"
+      root.panelTab = "system"
       if (root.shell) root.shell.summon(root.pluginId, "{}")
       return "ok"
     }

@@ -15,6 +15,9 @@ Column {
   readonly property var armoury: status && status.armoury ? status.armoury : ({})
   readonly property int limit: battery && service ? service.pick("battery.limit", battery.limit) || 100 : 100
   readonly property bool fnlockAvailable: !!(status && status.fnlock && status.fnlock.available)
+  readonly property var gpu: status && status.gpu ? status.gpu : null
+  readonly property string gpuNext: gpu && service ? String(service.pick("gpu.next", gpu.next)) : ""
+  readonly property bool gpuPending: !!gpu && gpuNext !== gpu.mode
 
   function armouryOn(name) {
     var attr = armoury[name]
@@ -174,31 +177,43 @@ Column {
   }
 
   // ---------- GPU ----------
-  PanelSeparator { foreground: tab.deck.fg; visible: !!tab.status && tab.status.dgpu !== "absent" }
+  PanelSeparator { foreground: tab.deck.fg; visible: !!tab.gpu }
 
   SectionHeader {
     icon: "󰢮"
     title: "GRAPHICS"
-    detail: tab.status ? ("Dedicated GPU " + Model.dgpuLabel(tab.status.dgpu)).toUpperCase() : ""
+    detail: tab.gpu ? (Model.gpuModeInfo(tab.gpu.mode).label + " · NVIDIA " + Model.dgpuLabel(tab.status.dgpu)).toUpperCase() : ""
     foreground: tab.deck.fg
     fontFamily: tab.deck.fontFamily
-    visible: !!tab.status && tab.status.dgpu !== "absent"
+    visible: !!tab.gpu
+  }
+
+  Seg {
+    width: parent.width
+    visible: !!tab.gpu
+    options: Model.gpuModes(tab.gpu)
+    value: tab.gpuNext
+    foreground: tab.deck.fg
+    fontFamily: tab.deck.fontFamily
+    onPicked: function(v) { tab.deck.askGpuMode(v) }
   }
 
   Item {
     width: parent.width
-    height: Math.max(gpuButton.implicitHeight, gpuText.implicitHeight)
-    visible: !!tab.status && tab.status.dgpu !== "absent"
+    height: Math.max(restartButton.visible ? restartButton.implicitHeight : 0, gpuText.implicitHeight)
+    visible: !!tab.gpu
 
     Text {
       id: gpuText
       anchors.left: parent.left
-      anchors.right: gpuButton.left
+      anchors.right: restartButton.visible ? restartButton.left : parent.right
       anchors.rightMargin: Style.space(10)
       anchors.verticalCenter: parent.verticalCenter
       textFormat: Text.PlainText
       wrapMode: Text.Wrap
-      text: "Hybrid mode lets the NVIDIA GPU sleep at about 0 W when nothing uses it. Switching modes needs a reboot."
+      text: tab.gpuPending
+        ? "Starts in " + Model.gpuModeInfo(tab.gpuNext).label + " mode after the next restart."
+        : Model.gpuModeInfo(tab.gpuNext).hint + ". Switching restarts the laptop."
       color: tab.deck.fg
       opacity: 0.55
       font.family: tab.deck.fontFamily
@@ -206,17 +221,18 @@ Column {
     }
 
     Button {
-      id: gpuButton
+      id: restartButton
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
-      text: "Switch mode…"
-      iconText: "󰢮"
-      tooltipText: "Opens Omarchy's hybrid GPU switch in a terminal"
+      visible: tab.gpuPending
+      text: "Restart now"
+      iconText: "󰜉"
+      tooltipText: "Restart to finish switching GPU mode"
       fontSize: Style.font.bodySmall
       foreground: tab.deck.fg
       fontFamily: tab.deck.fontFamily
       bordered: true
-      onClicked: tab.service.switchGpuMode()
+      onClicked: tab.deck.askGpuMode(tab.gpuNext)
     }
   }
 }

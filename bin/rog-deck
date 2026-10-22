@@ -3,8 +3,9 @@
 
 Everything goes through interfaces a normal user may touch: asusd on the
 system bus, power-profiles-daemon (via omarchy-powerprofiles-set), logind
-(brightnessctl), sysfs reads and hyprctl. Nothing here needs root; FN-lock
-calls the user's own `fnlock` tool, which carries its own sudoers rule.
+(brightnessctl), sysfs reads and hyprctl. FN-lock calls the user's own
+`fnlock` tool, which carries its own sudoers rule. The one root step is
+writing /etc/supergfxd.conf for Integrated GPU mode, done through pkexec.
 
   rog-deck status                          one JSON snapshot of everything the panel shows
   rog-deck profile <name|next|prev>        set the power mode for the current power source
@@ -28,7 +29,11 @@ calls the user's own `fnlock` tool, which carries its own sudoers rule.
   rog-deck refresh <hz>
   rog-deck fnlock on|off
 
-  rog-deck fans                            JSON: every mode's curves
+  rog-deck gpu                             JSON: running mode, mode after restart, choices
+  rog-deck gpu set <integrated|hybrid|dedicated> [--restart]
+  rog-deck gpu restart                     apply a pending GPU switch and reboot
+
+  rog-deck fans                           JSON: every mode's curves
   rog-deck fans set <mode> <cpu|gpu|both> <t:p,...>   8 points, p in percent; turns custom on
   rog-deck fans custom <mode> <on|off>
   rog-deck fans preset <mode> <silent|stock|cool|max>
@@ -48,6 +53,28 @@ STATE_HOME = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/st
 RUNTIME = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
 OMARCHY_PROFILES = os.path.join(STATE_HOME, "omarchy", "powerprofiles")
 KBD_IDLE_FILE = os.path.join(RUNTIME, "rog-deck", "kbd-idle")
+OMARCHY_PATH = os.environ.get("OMARCHY_PATH") or "/usr/share/omarchy"
+
+SUPERGFXD_CONF = "/etc/supergfxd.conf"
+SUPERGFXD_DELAY = "/etc/systemd/system/supergfxd.service.d/delay-start.conf"
+FORCE_IGPU_HOOK = "/usr/lib/systemd/system-sleep/force-igpu"
+GPU_MODES = ("integrated", "hybrid", "dedicated")
+# Run as root through pkexec; $1 is Integrated or Hybrid, $2 OMARCHY_PATH.
+# Mirrors omarchy-toggle-hybrid-gpu: Integrated needs supergfxd to start late
+# (it can freeze boot otherwise) and a sleep hook that turns the dGPU back off
+# after resume, since the G14 wakes up in Hybrid.
+SUPERGFXD_SCRIPT = r"""
+set -e
+conf=/etc/supergfxd.conf
+if [ "$1" = Integrated ]; then
+  install -D -m 0644 "$2/default/systemd/system/supergfxd.service.d/delay-start.conf" %s
+  install -D -m 0755 "$2/default/systemd/system-sleep/force-igpu" %s
+  sed -i -e 's/"mode": "[^"]*"/"mode": "Integrated"/' -e 's/"vfio_enable": false/"vfio_enable": true/' "$conf"
+else
+  sed -i 's/"mode": "[^"]*"/"mode": "Hybrid"/' "$conf"
+  rm -f %s %s
+fi
+""" % (SUPERGFXD_DELAY, FORCE_IGPU_HOOK, SUPERGFXD_DELAY, FORCE_IGPU_HOOK)
 
 # Display order for the mode tiles, quietest first.
 PROFILE_ORDER = ["power-saver", "balanced", "performance"]
@@ -433,6 +460,7 @@ def status():
         "battery": battery_status(),
         "display": display_status(),
         "fnlock": fnlock_status(),
+        "gpu": gpu_status(),
     }
 
 
@@ -687,6 +715,155 @@ def fnlock(args):
     act([tool, args[0]])
 
 
+# ------------------------------------------------------------------- gpu
+
+def nvidia_device():
+    for dev in glob.glob("/sys/bus/pci/devices/*"):
+        if read(dev + "/vendor") == "0x10de" and (read(dev + "/class") or "").startswith("0x03"):
+            return dev
+    return None
+
+
+def running_gpu_mode():
+    """The mode the laptop booted in. A switch only takes hold on restart."""
+    dev = nvidia_device()
+    driver = os.path.basename(os.readlink(dev + "/driver")) if dev and os.path.islink(dev + "/driver") else None
+    # Gone from the bus, or parked on vfio-pci by supergfxd: Integrated.
+    if driver in (None, "vfio-pci"):
+        return "integrated"
+    # With the MUX on dGPU the NVIDIA card drives the built-in panel itself.
+    for conn in glob.glob("/sys/class/drm/card*-eDP-*"):
+        if read(conn + "/status") == "connected" and os.path.realpath(conn + "/device/device") == os.path.realpath(dev):
+            return "dedicated"
+    return "hybrid"
+
+
+def armoury_attr(name):
+    """(current, queued) value of a firmware setting, or (None, None) if absent.
+
+    asusd holds GPU writes (gpu_mux_mode, dgpu_disable) in a queue and makes
+    them while the system shuts down; queued is None when nothing is waiting.
+    """
+    props = get_all(ROOT + "/asus_armoury/" + name, "xyz.ljones.AsusArmoury")
+    if not props:
+        return None, None
+    queued = props.get("QueuedGpuValue")
+    return props.get("CurrentValue"), queued if queued is not None and queued >= 0 else None
+
+
+def supergfxd_mode():
+    try:
+        with open(SUPERGFXD_CONF) as f:
+            return json.load(f).get("mode")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def gpu_status():
+    mux, mux_queued = armoury_attr("gpu_mux_mode")
+    disable, disable_queued = armoury_attr("dgpu_disable")
+    if nvidia_device() is None and mux is None and disable is None:
+        return None
+    gfx = supergfxd_mode()
+    modes = []
+    if gfx is not None and shutil.which("supergfxctl"):
+        modes.append("integrated")
+    modes.append("hybrid")
+    if mux is not None:
+        modes.append("dedicated")
+    mux_next = mux if mux_queued is None else mux_queued
+    disable_next = disable if disable_queued is None else disable_queued
+    if mux_next == 0:
+        upcoming = "dedicated"
+    elif gfx == "Integrated" or disable_next == 1:
+        upcoming = "integrated"
+    else:
+        upcoming = "hybrid"
+    running = running_gpu_mode()
+    return {"mode": running, "next": upcoming, "modes": modes, "restart": running != upcoming}
+
+
+def write_supergfxd(mode):
+    if mode == "Integrated":
+        for source in ("systemd/system/supergfxd.service.d/delay-start.conf", "systemd/system-sleep/force-igpu"):
+            source = os.path.join(OMARCHY_PATH, "default", source)
+            if not os.path.exists(source):
+                fail("Omarchy's %s is missing; can't set up Integrated mode safely" % source)
+    try:
+        out = subprocess.run(["pkexec", "/bin/sh", "-c", SUPERGFXD_SCRIPT, "rog-deck-gpu", mode, OMARCHY_PATH],
+                             capture_output=True, text=True, timeout=300)
+    except FileNotFoundError:
+        fail("pkexec is not installed")
+    except subprocess.TimeoutExpired:
+        fail("timed out waiting for the password prompt")
+    if out.returncode in (126, 127):
+        fail("GPU switch cancelled: no permission to change %s" % SUPERGFXD_CONF)
+    if out.returncode != 0:
+        detail = (out.stderr or out.stdout).strip().splitlines()
+        fail("could not update %s: %s" % (SUPERGFXD_CONF, detail[-1] if detail else "exit %d" % out.returncode))
+
+
+def gpu_set(target, restart=False):
+    info = gpu_status()
+    if not info:
+        fail("this laptop has no switchable GPU")
+    if target not in info["modes"]:
+        fail("%s mode is not available here (choices: %s)" % (target, ", ".join(info["modes"])))
+    mux, mux_queued = armoury_attr("gpu_mux_mode")
+    disable, disable_queued = armoury_attr("dgpu_disable")
+
+    # 1. supergfxd decides Integrated vs Hybrid at boot while the MUX is on Hybrid.
+    gfx = supergfxd_mode()
+    if gfx is not None:
+        want = "Integrated" if target == "integrated" else "Hybrid"
+        helpers = [os.path.exists(p) for p in (SUPERGFXD_DELAY, FORCE_IGPU_HOOK)]
+        settled = all(helpers) if target == "integrated" else not any(helpers)
+        if gfx != want or not settled:
+            write_supergfxd(want)
+
+    # 2. A firmware-disabled dGPU has to come back before Hybrid or Dedicated.
+    if target != "integrated" and disable is not None:
+        if target == "dedicated" and disable == 1:
+            # The kernel refuses the MUX switch while dgpu_disable is still 1,
+            # and asusd's shutdown queue doesn't promise the order of writes.
+            fail("the dGPU is switched off in firmware: switch to Hybrid and restart first")
+        if (disable if disable_queued is None else disable_queued) == 1:
+            act(["asusctl", "armoury", "set", "dgpu_disable", "0"])
+
+    # 3. The MUX: 0 hands the panel to the dGPU, 1 to the iGPU.
+    if mux is not None:
+        want_mux = 0 if target == "dedicated" else 1
+        if (mux if mux_queued is None else mux_queued) != want_mux:
+            act(["asusctl", "armoury", "set", "gpu_mux_mode", str(want_mux)])
+
+    info = gpu_status()
+    if info["next"] != target:
+        fail("the switch to %s didn't take; the laptop will start in %s" % (target, info["next"]))
+    print(json.dumps(info, separators=(",", ":")))
+    if restart and info["restart"]:
+        gpu_restart()
+
+
+def gpu_restart():
+    # Nothing to write here: asusd's asus-shutdown helper holds a shutdown
+    # inhibitor and makes the queued firmware writes on the way down.
+    reboot = shutil.which("omarchy-system-reboot")
+    act([reboot] if reboot else ["systemctl", "reboot"], timeout=30)
+
+
+def gpu(args):
+    if not args:
+        print(json.dumps(gpu_status(), separators=(",", ":")))
+    elif args[0] == "set" and len(args) in (2, 3) and args[1] in GPU_MODES:
+        if len(args) == 3 and args[2] != "--restart":
+            fail("unexpected argument: " + args[2])
+        gpu_set(args[1], restart=len(args) == 3)
+    elif args == ["restart"]:
+        gpu_restart()
+    else:
+        fail("gpu | gpu set <%s> [--restart] | gpu restart" % "|".join(GPU_MODES))
+
+
 # ------------------------------------------------------------------ fans
 
 def fan_profile_id(mode, choices=None):
@@ -822,6 +999,8 @@ def main(argv):
         refresh(args[0])
     elif command == "fnlock":
         fnlock(args)
+    elif command == "gpu":
+        gpu(args)
     elif command == "fans":
         fans(args)
     else:

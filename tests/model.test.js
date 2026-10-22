@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, formatSeconds }")()
+const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, gpuModes, gpuModeInfo, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, formatSeconds }")()
 
 // Trimmed from a real `bin/rog-deck status` on a GA402NV.
 const status = {
@@ -68,6 +68,12 @@ assert.strictEqual(Model.dgpuLabel("suspended"), "asleep")
 assert.strictEqual(Model.batteryLine(status.battery, true), "76% +44 W")
 assert.strictEqual(Model.batteryLine(status.battery, false), "76% −44 W")
 assert.strictEqual(Model.batteryLine(null, true), "")
+
+// GPU modes keep tile order and drop what the laptop lacks
+assert.deepStrictEqual(Model.gpuModes({ modes: ["dedicated", "hybrid"] }).map(m => m.value), ["hybrid", "dedicated"])
+assert.deepStrictEqual(Model.gpuModes(null), [])
+assert.strictEqual(Model.gpuModeInfo("dedicated").label, "Dedicated")
+assert.strictEqual(Model.gpuModeInfo("vfio").label, "Vfio")
 
 // tooltip
 assert.strictEqual(Model.tooltip(null), "ROG Deck: reading the laptop…")

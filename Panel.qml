@@ -17,6 +17,7 @@ Panel {
   property var service: null
   property bool cursorActive: false
   property int profileCursor: 0
+  readonly property string gpuAsk: service ? service.gpuAsk : ""
 
   readonly property var status: service ? service.status : null
   readonly property string activeProfile: service ? service.activeProfile : ""
@@ -77,6 +78,10 @@ Panel {
     flick.contentY = 0
   }
 
+  function askGpuMode(mode) {
+    if (service) service.askGpuMode(mode)
+  }
+
   function lookupService() {
     if (service) return
     var shell = bar ? bar.shell : null
@@ -103,7 +108,11 @@ Panel {
   Component.onDestruction: if (countedWatch && service) service.watchers = Math.max(0, service.watchers - 1)
 
   onOpenedChanged: {
-    if (!opened) return
+    // Closing the panel drops an unanswered restart prompt.
+    if (!opened) {
+      if (service) service.gpuAsk = ""
+      return
+    }
     cursorActive = false
     flick.contentY = 0
     for (var i = 0; i < profiles.length; i++) if (profiles[i].key === activeProfile) profileCursor = i
@@ -268,10 +277,32 @@ Panel {
       }
     }
 
+    ConfirmDialog {
+      id: gpuConfirm
+      anchors.fill: parent
+      z: 10
+      opened: root.gpuAsk !== ""
+      message: "Switch to " + Model.gpuModeInfo(root.gpuAsk).label + " GPU mode? The laptop restarts now to finish, closing open windows."
+      confirmText: "Restart"
+      foreground: root.fg
+      fontFamily: root.fontFamily
+      // Start on Cancel: Enter alone should never reboot.
+      onOpenedChanged: if (opened) selectedIndex = 0
+      onCanceled: root.service.gpuAsk = ""
+      onConfirmed: {
+        root.service.setGpuMode(root.gpuAsk, true)
+        root.service.gpuAsk = ""
+      }
+    }
+
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
       onMoveRequested: function(dx, dy) {
+        if (gpuConfirm.opened) {
+          if (dx !== 0) gpuConfirm.selectedIndex = gpuConfirm.selectedIndex === 0 ? 1 : 0
+          return
+        }
         if (dx !== 0) {
           // Left/right walks the power modes on Main, the tabs elsewhere.
           if (root.currentTab === "main") {
@@ -285,10 +316,18 @@ Panel {
         }
       }
       onActivateRequested: {
+        if (gpuConfirm.opened) {
+          if (gpuConfirm.selectedIndex === 0) gpuConfirm.canceled()
+          else gpuConfirm.confirmed()
+          return
+        }
         if (root.currentTab === "main" && root.cursorActive && root.profiles.length > 0 && root.service)
           root.service.setProfile(root.profiles[root.profileCursor].key)
       }
-      onCloseRequested: root.close()
+      onCloseRequested: {
+        if (gpuConfirm.opened) gpuConfirm.canceled()
+        else root.close()
+      }
       onTabRequested: function(direction) { root.switchPanel(direction) }
     }
   }

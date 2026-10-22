@@ -3,15 +3,43 @@
 
 Everything goes through interfaces a normal user may touch: asusd on the
 system bus, power-profiles-daemon (via omarchy-powerprofiles-set), logind
-(brightnessctl), sysfs reads and hyprctl. Nothing here needs root.
+(brightnessctl), sysfs reads and hyprctl. Nothing here needs root; FN-lock
+calls the user's own `fnlock` tool, which carries its own sudoers rule.
 
-  rog-deck status                    one JSON snapshot of everything the panel shows
-  rog-deck profile <name|next|prev>  set the power mode for the current power source
-  rog-deck takeover                  stop asusd switching profiles on plug/unplug
+  rog-deck status                          one JSON snapshot of everything the panel shows
+  rog-deck profile <name|next|prev>        set the power mode for the current power source
+  rog-deck takeover                        stop asusd switching profiles on plug/unplug
+
+  rog-deck kbd brightness <0-3>
+  rog-deck kbd idle-off <level>            remember the level, then dim to <level>
+  rog-deck kbd idle-on                     put the remembered level back
+  rog-deck aura <effect> [--colour hex] [--colour2 hex] [--speed low|med|high] [--direction d]
+                                           effect: static breathe rainbow-cycle rainbow-wave pulse
+  rog-deck aura-power <boot> <awake> <sleep> <shutdown>   each 0 or 1
+
+  rog-deck anime on|off
+  rog-deck anime brightness <0-3>
+  rog-deck anime builtins <boot> <awake> <sleep> <shutdown> [store]
+  rog-deck anime option <unplugged|suspended|lid> <on|off>
+  rog-deck anime image <path|logo> [--scale 1] [--x 0] [--y 0] [--angle 0] [--bright 100]
+                                           PNG, or GIF (keeps running while it plays)
+
+  rog-deck battery limit <20-100>
+  rog-deck battery oneshot
+  rog-deck armoury <name> <value>
+  rog-deck refresh <hz>
+  rog-deck fnlock on|off
+
+  rog-deck fans                            JSON: every mode's curves
+  rog-deck fans set <mode> <cpu|gpu|both> <t:p,...>   8 points, p in percent; turns custom on
+  rog-deck fans custom <mode> <on|off>
+  rog-deck fans preset <mode> <silent|stock|cool|max>
+  rog-deck fans reset <mode>
 """
 
 import glob
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -20,10 +48,47 @@ import sys
 ASUSD = "xyz.ljones.Asusd"
 ROOT = "/xyz/ljones"
 STATE_HOME = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+RUNTIME = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
 OMARCHY_PROFILES = os.path.join(STATE_HOME, "omarchy", "powerprofiles")
+KBD_IDLE_FILE = os.path.join(RUNTIME, "rog-deck", "kbd-idle")
+HERE = os.path.dirname(os.path.realpath(__file__))
+STATIC_LOGO = os.path.join(HERE, "..", "assets", "anime", "rog-logo-static.png")
 
 # Display order for the mode tiles, quietest first.
 PROFILE_ORDER = ["power-saver", "balanced", "performance"]
+# asusd PlatformProfile ids.
+ASUSD_BALANCED, ASUSD_PERFORMANCE, ASUSD_QUIET, ASUSD_LOWPOWER = 0, 1, 2, 3
+
+AURA_EFFECTS = {"static": 0, "breathe": 1, "rainbow-cycle": 2, "rainbow-wave": 3, "pulse": 10}
+SPEEDS = ("low", "med", "high")
+DIRECTIONS = ("up", "down", "left", "right")
+ANIME_OPTIONS = {"unplugged": "OffWhenUnplugged", "suspended": "OffWhenSuspended", "lid": "OffWhenLidClosed"}
+ANIME_BUILTINS = {
+    "boot": ("GlitchConstruction", "StaticEmergence"),
+    "awake": ("BinaryBannerScroll", "RogLogoGlitch"),
+    "sleep": ("BannerSwipe", "Starfield"),
+    "shutdown": ("GlitchOut", "SeeYa"),
+}
+
+# Percent duty per point. Silent keeps the fans off until about 70 °C.
+FAN_PRESETS = {
+    "silent": {"cpu": "45:0,55:0,62:0,68:0,72:15,80:30,88:55,97:90",
+               "gpu": "45:0,55:0,62:0,68:0,72:15,80:30,88:55,97:90"},
+    "stock": {"cpu": "50:1,55:13,60:30,64:32,74:44,78:51,82:59,97:100",
+              "gpu": "50:1,55:11,60:18,64:32,74:42,78:51,82:59,97:91"},
+    "cool": {"cpu": "40:10,50:25,58:40,65:55,72:70,80:85,88:95,97:100",
+             "gpu": "40:10,50:25,58:40,65:55,72:70,80:85,88:95,97:100"},
+    "max": {"cpu": "30:100,40:100,50:100,60:100,70:100,80:100,90:100,97:100",
+            "gpu": "30:100,40:100,50:100,60:100,70:100,80:100,90:100,97:100"},
+}
+
+
+class Failure(Exception):
+    pass
+
+
+def fail(message):
+    raise Failure(message)
 
 
 def run(cmd, timeout=3):
@@ -32,6 +97,20 @@ def run(cmd, timeout=3):
     except (OSError, subprocess.TimeoutExpired):
         return None
     return out.stdout if out.returncode == 0 else None
+
+
+def act(cmd, timeout=10):
+    """Run a command that changes something; raise with its stderr on failure."""
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except FileNotFoundError:
+        fail("%s is not installed" % cmd[0])
+    except subprocess.TimeoutExpired:
+        fail("%s timed out" % " ".join(cmd[:3]))
+    if out.returncode != 0:
+        detail = (out.stderr or out.stdout).strip().splitlines()
+        fail("%s failed: %s" % (" ".join(cmd[:3]), detail[-1] if detail else "exit %d" % out.returncode))
+    return out.stdout
 
 
 def read(path):
@@ -60,14 +139,6 @@ def busctl(*args):
         return None
 
 
-def get_all(path, interface, service=ASUSD):
-    """All properties of one D-Bus object as a plain dict, or None."""
-    reply = busctl("call", service, path, "org.freedesktop.DBus.Properties", "GetAll", "s", interface)
-    if not reply or not reply.get("data"):
-        return None
-    return {key: unwrap(value) for key, value in reply["data"][0].items()}
-
-
 def unwrap(value):
     """Strip busctl's {"type", "data"} variant wrappers, recursively."""
     if isinstance(value, dict) and set(value) == {"type", "data"}:
@@ -79,10 +150,27 @@ def unwrap(value):
     return value
 
 
+def get_all(path, interface, service=ASUSD):
+    """All properties of one D-Bus object as a plain dict, or None."""
+    reply = busctl("call", service, path, "org.freedesktop.DBus.Properties", "GetAll", "s", interface)
+    if not reply or not reply.get("data"):
+        return None
+    return {key: unwrap(value) for key, value in reply["data"][0].items()}
+
+
+def set_property(path, interface, prop, signature, *values):
+    act(["busctl", "--system", "set-property", ASUSD, path, interface, prop, signature, *map(str, values)])
+
+
+def call(path, interface, method, signature="", *args):
+    cmd = ["busctl", "--system", "-j", "call", ASUSD, path, interface, method]
+    if signature:
+        cmd += [signature, *map(str, args)]
+    out = act(cmd)
+    return unwrap(json.loads(out)) if out.strip() else None
+
+
 def asusd_objects():
-    reply = busctl("tree", "--list", ASUSD)
-    if isinstance(reply, list):
-        return reply
     out = run(["busctl", "--system", "tree", "--list", ASUSD])
     return out.split() if out else []
 
@@ -108,14 +196,32 @@ def hex_colour(rgb):
         return None
 
 
+def valid_hex(value):
+    value = str(value or "").lstrip("#").lower()
+    if len(value) != 6 or any(c not in "0123456789abcdef" for c in value):
+        fail("colour must be six hex digits, got %r" % value)
+    return value
+
+
+def kbd_led():
+    for path in sorted(glob.glob("/sys/class/leds/*kbd_backlight*")):
+        return path
+    return None
+
+
+def aura_path(objects=None):
+    objects = objects if objects is not None else asusd_objects()
+    return next((o for o in objects if o.startswith(ROOT + "/aura/") and o != ROOT + "/aura/anime"), None)
+
+
 # ---------------------------------------------------------------- status
 
-def profile_status():
+def profile_status(platform=None):
     ppd = get_all("/org/freedesktop/UPower/PowerProfiles", "org.freedesktop.UPower.PowerProfiles",
                   "org.freedesktop.UPower.PowerProfiles") or {}
     names = [p.get("Profile") for p in ppd.get("Profiles") or []]
     choices = [name for name in PROFILE_ORDER if name in names]
-    platform = get_all(ROOT, "xyz.ljones.Platform") or {}
+    platform = platform if platform is not None else (get_all(ROOT, "xyz.ljones.Platform") or {})
     return {
         "active": ppd.get("ActiveProfile"),
         "choices": choices,
@@ -128,25 +234,36 @@ def profile_status():
     }
 
 
+def led_power(raw):
+    """asusd LedPower is a list of (zone, boot, awake, sleep, shutdown); 1 is the keyboard."""
+    try:
+        for zone in raw[0]:
+            if zone[0] == 1:
+                return dict(zip(["boot", "awake", "sleep", "shutdown"], [bool(v) for v in zone[1:5]]))
+    except (TypeError, IndexError):
+        pass
+    return None
+
+
 def keyboard_status(objects):
-    led = "/sys/class/leds/asus::kbd_backlight"
+    led = kbd_led()
     status = {
-        "brightness": read_int(led + "/brightness"),
-        "max": read_int(led + "/max_brightness"),
+        "brightness": read_int(led + "/brightness") if led else None,
+        "max": read_int(led + "/max_brightness") if led else None,
+        "idleOff": os.path.exists(KBD_IDLE_FILE),
     }
-    aura_path = next((o for o in objects if o.startswith(ROOT + "/aura/") and not o.endswith("/anime")), None)
-    aura = get_all(aura_path, "xyz.ljones.Aura") if aura_path else None
+    path = aura_path(objects)
+    aura = get_all(path, "xyz.ljones.Aura") if path else None
     if aura:
-        data = aura.get("LedModeData") or [None, None, None, None, None, None]
+        data = aura.get("LedModeData") or [None] * 6
         status.update({
-            "path": aura_path,
             "mode": aura.get("LedMode"),
             "modes": aura.get("SupportedBasicModes") or [],
             "colour1": hex_colour(data[2]),
             "colour2": hex_colour(data[3]),
-            "speed": data[4],
-            "direction": data[5],
-            "power": aura.get("LedPower"),
+            "speed": str(data[4] or "").lower() or None,
+            "direction": str(data[5] or "").lower() or None,
+            "power": led_power(aura.get("LedPower")),
         })
     return status
 
@@ -251,7 +368,7 @@ def battery_status():
     }
 
 
-def display_status():
+def panel_monitor():
     out = run(["hyprctl", "monitors", "-j"])
     if not out:
         return None
@@ -259,24 +376,41 @@ def display_status():
         monitors = json.loads(out)
     except ValueError:
         return None
-    panel = next((m for m in monitors if m.get("name", "").startswith("eDP")), None)
-    if not panel:
-        return None
+    return next((m for m in monitors if m.get("name", "").startswith("eDP")), None)
+
+
+def panel_modes(panel):
+    """{rounded hz: exact mode string} at the panel's current resolution."""
     size = "%dx%d" % (panel["width"], panel["height"])
-    rates = set()
+    modes = {}
     for mode in panel.get("availableModes", []):
         res, _, hz = mode.partition("@")
         if res == size:
             try:
-                rates.add(round(float(hz.rstrip("Hz"))))
+                modes[round(float(hz.rstrip("Hz")))] = "%s@%s" % (res, hz.rstrip("Hz"))
             except ValueError:
                 pass
-    return {"name": panel["name"], "refresh": round(panel.get("refreshRate", 0)), "rates": sorted(rates)}
+    return modes
+
+
+def display_status():
+    panel = panel_monitor()
+    if not panel:
+        return None
+    return {"name": panel["name"], "refresh": round(panel.get("refreshRate", 0)),
+            "rates": sorted(panel_modes(panel))}
+
+
+def fnlock_tool():
+    tool = shutil.which("fnlock")
+    local = os.path.expanduser("~/.local/bin/fnlock")
+    if not tool and os.access(local, os.X_OK):
+        tool = local
+    return tool
 
 
 def fnlock_status():
-    tool = shutil.which("fnlock") or (os.path.expanduser("~/.local/bin/fnlock")
-                                      if os.access(os.path.expanduser("~/.local/bin/fnlock"), os.X_OK) else None)
+    tool = fnlock_tool()
     if not tool:
         return {"available": False, "on": False}
     out = run([tool, "status"])
@@ -293,7 +427,7 @@ def status():
         "asusdVersion": platform.get("Version") if platform else None,
         "model": read("/sys/class/dmi/id/product_name"),
         "ac": on_ac(),
-        "profile": profile_status(),
+        "profile": profile_status(platform or {}),
         "keyboard": keyboard_status(objects),
         "anime": anime_status(objects),
         "armoury": armoury_status(objects),
@@ -307,7 +441,7 @@ def status():
     }
 
 
-# --------------------------------------------------------------- actions
+# ------------------------------------------------------------- profiles
 
 def set_profile(arg):
     current = profile_status()
@@ -320,9 +454,7 @@ def set_profile(arg):
         target = choices[(index + step) % len(choices)]
     if target not in choices:
         fail("unknown profile: %s (choices: %s)" % (arg, ", ".join(choices)))
-    source = "ac" if on_ac() else "battery"
-    if subprocess.run(["omarchy-powerprofiles-set", source, target]).returncode != 0:
-        fail("omarchy-powerprofiles-set failed")
+    act(["omarchy-powerprofiles-set", "ac" if on_ac() else "battery", target])
     print(target)
 
 
@@ -333,18 +465,376 @@ def takeover():
     charger changes, each from its own memory, so whichever runs last wins.
     """
     for prop in ("ChangePlatformProfileOnAc", "ChangePlatformProfileOnBattery"):
-        result = subprocess.run(["busctl", "--system", "set-property", ASUSD, ROOT,
-                                 "xyz.ljones.Platform", prop, "b", "false"],
-                                capture_output=True, text=True)
-        if result.returncode != 0:
-            fail("could not set %s: %s" % (prop, result.stderr.strip()))
+        set_property(ROOT, "xyz.ljones.Platform", prop, "b", "false")
     print("ok")
 
 
-def fail(message):
-    print("rog-deck: " + message, file=sys.stderr)
-    sys.exit(1)
+# ------------------------------------------------------------- keyboard
 
+def brightnessctl(*args):
+    led = kbd_led()
+    if not led:
+        fail("no keyboard backlight found")
+    act(["brightnessctl", "-q", "-d", os.path.basename(led), *args])
+
+
+def kbd_brightness(level):
+    led = kbd_led()
+    top = read_int(led + "/max_brightness") if led else 3
+    level = int(level)
+    if not 0 <= level <= (top or 3):
+        fail("brightness must be 0-%d" % (top or 3))
+    # A manual change ends any pending auto-off restore.
+    clear_idle_file()
+    brightnessctl("set", str(level))
+
+
+def clear_idle_file():
+    try:
+        os.remove(KBD_IDLE_FILE)
+    except OSError:
+        pass
+
+
+def kbd_idle_off(level):
+    led = kbd_led()
+    current = read_int(led + "/brightness") if led else None
+    level = int(level)
+    if current is None or current <= level or os.path.exists(KBD_IDLE_FILE):
+        return
+    os.makedirs(os.path.dirname(KBD_IDLE_FILE), exist_ok=True)
+    with open(KBD_IDLE_FILE, "w") as f:
+        f.write("%d %d\n" % (current, level))
+    brightnessctl("set", str(level))
+
+
+def kbd_idle_on():
+    raw = read(KBD_IDLE_FILE)
+    clear_idle_file()
+    if not raw:
+        return
+    try:
+        saved, dimmed = (int(v) for v in raw.split())
+    except ValueError:
+        return
+    led = kbd_led()
+    # Someone else changed it while we were dimmed (the brightness keys,
+    # the lock screen putting its own level back): theirs wins.
+    if led and read_int(led + "/brightness") != dimmed:
+        return
+    brightnessctl("set", str(saved))
+    # The lock screen blanks the keyboard with brightnessctl's save slot and
+    # restores from it on wake. If it blanked while we had the light off, the
+    # slot holds our dimmed level; overwrite it so unlock lands on ours.
+    brightnessctl("-s", "set", str(saved))
+
+
+def aura(args):
+    if not args or args[0] not in AURA_EFFECTS:
+        fail("effect must be one of: " + ", ".join(AURA_EFFECTS))
+    effect, opts = args[0], parse_opts(args[1:], {"--colour", "--colour2", "--speed", "--direction"})
+    cmd = ["asusctl", "aura", "effect", effect]
+    colour = valid_hex(opts.get("--colour", "ffffff"))
+    speed = opts.get("--speed", "med")
+    if speed not in SPEEDS:
+        fail("speed must be one of: " + ", ".join(SPEEDS))
+    if effect in ("static", "pulse"):
+        cmd += ["-c", colour]
+    elif effect == "breathe":
+        cmd += ["--colour", colour, "--colour2", valid_hex(opts.get("--colour2", "000000")), "--speed", speed]
+    elif effect == "rainbow-cycle":
+        cmd += ["--speed", speed]
+    elif effect == "rainbow-wave":
+        direction = opts.get("--direction", "right")
+        if direction not in DIRECTIONS:
+            fail("direction must be one of: " + ", ".join(DIRECTIONS))
+        cmd += ["--speed", speed, "--direction", direction]
+    # The keyboard can keep animating the old effect while asusd reports the
+    # new one (seen going breathe -> static on a GA402). Blanking it first and
+    # re-sending its power state and brightness afterwards makes it take hold.
+    led = kbd_led()
+    level = read_int(led + "/brightness") if led else None
+    act(["asusctl", "leds", "set", "off"])
+    try:
+        act(cmd)
+        power = led_power((get_all(aura_path(), "xyz.ljones.Aura") or {}).get("LedPower"))
+        if power:
+            aura_power(["1" if power[slot] else "0" for slot in ("boot", "awake", "sleep", "shutdown")])
+    finally:
+        names = ["off", "low", "med", "high"]
+        act(["asusctl", "leds", "set", names[max(0, min(3, level if level is not None else 2))]])
+
+
+def aura_power(args):
+    if len(args) != 4 or any(a not in ("0", "1") for a in args):
+        fail("aura-power takes four 0/1 values: boot awake sleep shutdown")
+    cmd = ["asusctl", "aura", "power", "keyboard"]
+    for name, value in zip(["--boot", "--awake", "--sleep", "--shutdown"], args):
+        if value == "1":
+            cmd.append(name)
+    act(cmd)
+
+
+def parse_opts(args, allowed):
+    opts = {}
+    i = 0
+    while i < len(args):
+        if args[i] not in allowed or i + 1 >= len(args):
+            fail("unexpected argument: " + args[i])
+        opts[args[i]] = args[i + 1].lower()
+        i += 2
+    return opts
+
+
+# ---------------------------------------------------------------- anime
+
+def on_off(value):
+    if value not in ("on", "off"):
+        fail("expected on or off, got %r" % value)
+    return "true" if value == "on" else "false"
+
+
+def anime(args):
+    path = ROOT + "/aura/anime"
+    if not args:
+        fail("anime needs a command")
+    command = args[0]
+    if command in ("on", "off"):
+        act(["asusctl", "anime", "--enable-display", on_off(command)])
+    elif command == "brightness" and len(args) == 2:
+        level = int(args[1])
+        if not 0 <= level <= 3:
+            fail("brightness must be 0-3")
+        set_property(path, "xyz.ljones.Anime", "Brightness", "u", level)
+    elif command == "builtins" and len(args) in (5, 6):
+        # "store" keeps whatever is on the panel now (a custom image) and only
+        # records the animations for when the built-ins run again.
+        store = len(args) == 6 and args[5] == "store"
+        cmd = ["asusctl", "anime", "set-builtins"]
+        for slot, name in zip(["boot", "awake", "sleep", "shutdown"], args[1:5]):
+            if name not in ANIME_BUILTINS[slot]:
+                fail("%s animation must be one of: %s" % (slot, ", ".join(ANIME_BUILTINS[slot])))
+            cmd += ["--" + slot, name]
+        act(cmd + ["--set", "false" if store else "true"])
+        if not store:
+            # set-builtins alone leaves the panel dark if a custom image
+            # turned the built-in animations off; switch them back on.
+            act(["asusctl", "anime", "--enable-powersave-anim", "true"])
+            act(["asusctl", "anime", "--enable-display", "true"])
+    elif command == "option" and len(args) == 3:
+        if args[1] not in ANIME_OPTIONS:
+            fail("option must be one of: " + ", ".join(ANIME_OPTIONS))
+        set_property(path, "xyz.ljones.Anime", ANIME_OPTIONS[args[1]], "b", on_off(args[2]))
+    elif command == "image" and len(args) >= 2:
+        anime_image(args[1], parse_opts(args[2:], {"--scale", "--x", "--y", "--angle", "--bright"}))
+    else:
+        fail("unknown anime command: " + " ".join(args))
+
+
+def anime_image(image, opts):
+    """Show a PNG or GIF. Placement is asusctl's: scale 1 fits the panel,
+    x/y move it in the panel's physical units (about 27 wide, 17 tall),
+    angle is in degrees here, bright in percent."""
+    logo = image == "logo"
+    image = STATIC_LOGO if logo else os.path.expanduser(image)
+    if not os.path.isfile(image):
+        fail("no such image: " + image)
+    try:
+        # Defaults put the bundled logo where the firmware's RogLogoGlitch sits.
+        scale = float(opts.get("--scale", 1.25 if logo else 1.0))
+        x = float(opts.get("--x", 0.0))
+        y = float(opts.get("--y", -0.8 if logo else 0.0))
+        angle = math.radians(float(opts.get("--angle", 0.0)))
+        bright = float(opts.get("--bright", 100)) / 100
+    except ValueError:
+        fail("placement values must be numbers")
+    if not (0.1 <= scale <= 5 and 0 <= bright <= 1):
+        fail("scale must be 0.1-5 and bright 0-100")
+    kind = "gif" if image.lower().endswith(".gif") else "image"
+    # Built-in animations override a custom image unless they are off; end
+    # on enable-display so the panel is left lit.
+    act(["asusctl", "anime", "--enable-powersave-anim", "false"])
+    act(["asusctl", "anime", "--enable-display", "true"])
+    cmd = ["asusctl", "anime", kind, "--path", image, "--scale", "%.3f" % scale,
+           "--x-pos", "%.3f" % x, "--y-pos", "%.3f" % y, "--angle", "%.4f" % angle, "--bright", "%.3f" % bright]
+    if kind == "gif":
+        # asusctl plays a GIF itself, frame by frame, for as long as it
+        # runs. Become that process so the caller can keep it alive or kill it.
+        sys.stdout.flush()
+        os.execvp(cmd[0], cmd + ["--loops", "0"])
+    act(cmd, timeout=20)
+
+
+# ----------------------------------------------------- battery, firmware
+
+def battery(args):
+    if args == ["oneshot"]:
+        act(["asusctl", "battery", "oneshot"])
+    elif len(args) == 2 and args[0] == "limit":
+        limit = int(args[1])
+        if not 20 <= limit <= 100:
+            fail("limit must be 20-100")
+        act(["asusctl", "battery", "limit", str(limit)])
+    else:
+        fail("battery limit <20-100> | battery oneshot")
+
+
+def armoury(args):
+    if len(args) != 2:
+        fail("armoury <name> <value>")
+    name, value = args
+    attrs = armoury_status(asusd_objects())
+    if name not in attrs:
+        fail("this laptop has no firmware setting called " + name)
+    allowed = attrs[name]["values"]
+    if allowed and int(value) not in allowed:
+        fail("%s must be one of %s" % (name, allowed))
+    act(["asusctl", "armoury", "set", name, str(int(value))])
+
+
+def refresh(hz):
+    panel = panel_monitor()
+    if not panel:
+        fail("no built-in display found")
+    modes = panel_modes(panel)
+    target = int(round(float(hz)))
+    if target not in modes:
+        fail("the panel has no %d Hz mode (has %s)" % (target, ", ".join(map(str, sorted(modes)))))
+    if round(panel.get("refreshRate", 0)) == target:
+        return
+    scale = panel.get("scale", 1)
+    scale = int(scale) if float(scale).is_integer() else scale
+    # Hyprland 0.56 reads a Lua config, which rejects `hyprctl keyword
+    # monitor`; hl.monitor replaces the whole rule, so repeat position and scale.
+    act(["hyprctl", "eval", 'hl.monitor({ output = "%s", mode = "%s", position = "%dx%d", scale = %s })'
+         % (panel["name"], modes[target], panel["x"], panel["y"], scale)])
+    # hyprmoncfg's daemon re-applies its active profile shortly after any
+    # runtime change; save the profile so the new rate sticks.
+    out = run(["hyprmoncfg", "status", "--json"]) if shutil.which("hyprmoncfg") else None
+    if out:
+        try:
+            info = json.loads(out)
+        except ValueError:
+            info = {}
+        profile = info.get("active_profile")
+        if (info.get("daemon") or {}).get("running") and profile:
+            name = profile.get("name") if isinstance(profile, dict) else profile
+            if name:
+                act(["hyprmoncfg", "save", str(name)])
+
+
+def fnlock(args):
+    if args not in (["on"], ["off"]):
+        fail("fnlock on|off")
+    tool = fnlock_tool()
+    if not tool:
+        fail("FN-lock is not set up (no fnlock command)")
+    act([tool, args[0]])
+
+
+# ------------------------------------------------------------------ fans
+
+def fan_profile_id(mode, choices=None):
+    if mode == "balanced":
+        return ASUSD_BALANCED
+    if mode == "performance":
+        return ASUSD_PERFORMANCE
+    if mode == "power-saver":
+        if choices is None:
+            choices = (get_all(ROOT, "xyz.ljones.Platform") or {}).get("PlatformProfileChoices") or []
+        return ASUSD_LOWPOWER if ASUSD_LOWPOWER in choices else ASUSD_QUIET
+    fail("unknown mode: " + mode)
+
+
+def to_percent(pwm):
+    return round(pwm * 100 / 255)
+
+
+def to_pwm(percent):
+    return max(0, min(255, round(percent * 255 / 100)))
+
+
+def parse_curve(text):
+    points = []
+    for part in str(text).split(","):
+        t, _, p = part.partition(":")
+        try:
+            points.append((int(t), int(p.rstrip("%"))))
+        except ValueError:
+            fail("bad curve point %r (want temp:percent)" % part)
+    if len(points) != 8:
+        fail("a curve has exactly 8 points, got %d" % len(points))
+    for i, (t, p) in enumerate(points):
+        if not 0 <= t <= 120 or not 0 <= p <= 100:
+            fail("point %d out of range (temp 0-120, percent 0-100)" % (i + 1))
+        if i and t < points[i - 1][0]:
+            fail("temperatures must not go down (point %d)" % (i + 1))
+    return points
+
+
+def fan_data(profile_id):
+    reply = call(ROOT, "xyz.ljones.FanCurves", "FanCurveData", "u", profile_id)
+    curves = {}
+    for entry in (reply or [[]])[0]:
+        fan, pwm, temp, enabled = entry
+        curves[fan.lower()] = {
+            "enabled": bool(enabled),
+            "points": [{"t": t, "p": to_percent(p)} for t, p in zip(temp, pwm)],
+        }
+    return curves
+
+
+def fans_status():
+    platform = get_all(ROOT, "xyz.ljones.Platform") or {}
+    choices = platform.get("PlatformProfileChoices") or []
+    result = {}
+    for mode in PROFILE_ORDER:
+        curves = fan_data(fan_profile_id(mode, choices))
+        result[mode] = {
+            "custom": any(c["enabled"] for c in curves.values()),
+            "fans": curves,
+        }
+    return result
+
+
+def fan_set(mode, which, curve):
+    profile_id = fan_profile_id(mode)
+    points = parse_curve(curve)
+    fans = ["cpu", "gpu"] if which == "both" else [which]
+    existing = fan_data(profile_id)
+    for fan in fans:
+        if fan not in existing:
+            fail("this laptop has no %s fan curve" % fan)
+        # Each point write clears the enable flag in the kernel; SetFanCurve
+        # with enabled=true writes all points and then enables, in that order.
+        args = [profile_id, fan.upper()]
+        args += [to_pwm(p) for _, p in points] + [t for t, _ in points] + ["true"]
+        call(ROOT, "xyz.ljones.FanCurves", "SetFanCurve", "u(s(yyyyyyyy)(yyyyyyyy)b)", *args)
+    call(ROOT, "xyz.ljones.FanCurves", "SetFanCurvesEnabled", "ub", profile_id, "true")
+
+
+def fans(args):
+    if not args:
+        print(json.dumps(fans_status(), separators=(",", ":")))
+        return
+    command = args[0]
+    if command == "set" and len(args) == 4 and args[2] in ("cpu", "gpu", "both"):
+        fan_set(args[1], args[2], args[3])
+    elif command == "custom" and len(args) == 3:
+        call(ROOT, "xyz.ljones.FanCurves", "SetFanCurvesEnabled", "ub",
+             fan_profile_id(args[1]), on_off(args[2]))
+    elif command == "preset" and len(args) == 3 and args[2] in FAN_PRESETS:
+        for fan in ("cpu", "gpu"):
+            fan_set(args[1], fan, FAN_PRESETS[args[2]][fan])
+    elif command == "reset" and len(args) == 2:
+        profile_id = fan_profile_id(args[1])
+        call(ROOT, "xyz.ljones.FanCurves", "SetCurvesToDefaults", "u", profile_id)
+        call(ROOT, "xyz.ljones.FanCurves", "SetFanCurvesEnabled", "ub", profile_id, "false")
+    else:
+        fail("unknown fans command: " + " ".join(args))
+
+
+# ------------------------------------------------------------------ main
 
 def main(argv):
     if not argv or argv[0] in ("-h", "--help", "help"):
@@ -357,9 +847,38 @@ def main(argv):
         set_profile(args[0])
     elif command == "takeover":
         takeover()
+    elif command == "kbd" and len(args) == 2 and args[0] == "brightness":
+        kbd_brightness(args[1])
+    elif command == "kbd" and len(args) == 2 and args[0] == "idle-off":
+        kbd_idle_off(args[1])
+    elif command == "kbd" and args == ["idle-on"]:
+        kbd_idle_on()
+    elif command == "aura":
+        aura(args)
+    elif command == "aura-power":
+        aura_power(args)
+    elif command == "anime":
+        anime(args)
+    elif command == "battery":
+        battery(args)
+    elif command == "armoury":
+        armoury(args)
+    elif command == "refresh" and len(args) == 1:
+        refresh(args[0])
+    elif command == "fnlock":
+        fnlock(args)
+    elif command == "fans":
+        fans(args)
     else:
         fail("unknown command: " + " ".join(argv))
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    try:
+        main(sys.argv[1:])
+    except Failure as error:
+        print("rog-deck: %s" % error, file=sys.stderr)
+        sys.exit(1)
+    except ValueError as error:
+        print("rog-deck: bad value: %s" % error, file=sys.stderr)
+        sys.exit(1)

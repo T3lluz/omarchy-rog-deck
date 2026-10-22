@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, batteryLine, tooltip }")()
+const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, animePlacementDefaults, animePlacementArgs, formatSeconds }")()
 
 // Trimmed from a real `bin/rog-deck status` on a GA402NV.
 const status = {
@@ -73,5 +73,68 @@ assert.strictEqual(Model.batteryLine(null, true), "")
 assert.strictEqual(Model.tooltip(null), "ROG Deck: reading the laptop…")
 assert.strictEqual(Model.tooltip({ asusd: false }), "ROG Deck: asusd is not running")
 assert.strictEqual(Model.tooltip(status), "Silent mode\nCPU 77°  GPU 65°\nFans 3.2k / 3.4k rpm\nBattery 76% +44 W")
+
+// settings
+const merged = Model.mergeSettings('{"kbdIdle":{"timeout":30,"enabled":"yes"},"refresh":"auto","bogus":1,"anime":{"content":"static"}}')
+assert.strictEqual(merged.kbdIdle.timeout, 30)
+assert.strictEqual(merged.kbdIdle.enabled, true, "wrong-typed values keep the default")
+assert.strictEqual(merged.refresh, "auto")
+assert.strictEqual(merged.anime.content, "static")
+assert.strictEqual(merged.bogus, undefined)
+assert.deepStrictEqual(Model.mergeSettings("not json"), Model.defaultSettings())
+assert.strictEqual(Model.cleanHex("#79818A\n"), "79818a")
+assert.strictEqual(Model.cleanHex("zz"), "")
+
+// keyboard effects: a white-only keyboard gets Static alone
+assert.deepStrictEqual(Model.auraEffects([0, 1, 2, 3, 10], false).map(e => e.key), ["static"])
+assert.deepStrictEqual(Model.auraEffects([0, 1, 2, 3, 10], true).map(e => e.key), ["static", "breathe", "pulse", "rainbow-cycle", "rainbow-wave"])
+assert.deepStrictEqual(Model.auraEffects([0], true).map(e => e.key), ["static"])
+assert.strictEqual(Model.nextAuraEffect("static", [0, 1, 10], false), "static")
+assert.strictEqual(Model.nextAuraEffect("static", [0, 1, 10], true), "breathe")
+assert.strictEqual(Model.nextAuraEffect("pulse", [0, 1, 10], true), "static")
+assert.strictEqual(Model.nextAuraEffect("x", [], false), "")
+const light = Model.defaultSettings().kbdLight
+assert.deepStrictEqual(Model.auraArgs(light, "798186"), ["static", "--colour", "ffffff"], "white keyboard always gets white")
+assert.deepStrictEqual(Model.auraArgs(Object.assign({}, light, { rgb: true }), "798186"), ["static", "--colour", "798186"])
+assert.deepStrictEqual(Model.auraArgs(Object.assign({}, light, { rgb: true, followTheme: false, colour: "ff0033" }), "798186"), ["static", "--colour", "ff0033"])
+assert.deepStrictEqual(Model.auraArgs(Object.assign({}, light, { effect: "breathe", speed: "high" }), ""),
+  ["breathe", "--colour", "ffffff", "--colour2", "000000", "--speed", "high"])
+assert.deepStrictEqual(Model.auraArgs(Object.assign({}, light, { effect: "rainbow-wave", rgb: true }), ""),
+  ["rainbow-wave", "--speed", "med", "--direction", "right"])
+assert.strictEqual(Model.auraArgs(Object.assign({}, light, { effect: "nope" }), ""), null)
+
+// anime
+assert.deepStrictEqual(Model.animeBuiltins(null, "sleep", "BannerSwipe"),
+  { boot: "GlitchConstruction", awake: "BinaryBannerScroll", sleep: "BannerSwipe", shutdown: "SeeYa" })
+const anime = { builtinsEnabled: true, builtins: { boot: "StaticEmergence", awake: "RogLogoGlitch", sleep: "Starfield", shutdown: "GlitchOut" } }
+assert.strictEqual(Model.animeBuiltins(anime, "shutdown", "SeeYa").awake, "RogLogoGlitch", "other slots keep their value")
+assert.strictEqual(Model.animeContent("static", anime), "logo", "running built-ins win")
+assert.strictEqual(Model.animeContent("custom", { builtinsEnabled: false }), "custom")
+assert.strictEqual(Model.animeContent("banner", { builtinsEnabled: false }), "static")
+
+assert.deepStrictEqual(Model.animePlacementArgs(Model.animePlacementDefaults("static")),
+  ["--scale", "1.25", "--x", "0", "--y", "-0.8", "--angle", "0", "--bright", "100"])
+assert.deepStrictEqual(Model.animePlacementArgs({ scale: 0.333, x: 1.236, y: -2, angle: 45.4, bright: 80 }),
+  ["--scale", "0.33", "--x", "1.24", "--y", "-2", "--angle", "45", "--bright", "80"])
+assert.strictEqual(Model.mergeSettings('{"anime":{"placement":{"custom":{"scale":2}}}}').anime.placement.custom.scale, 2)
+assert.strictEqual(Model.mergeSettings('{"anime":{"placement":{"custom":{"scale":2}}}}').anime.placement.static.y, -0.8)
+assert.strictEqual(Model.formatSeconds(45), "45 s")
+assert.strictEqual(Model.formatSeconds(60), "1 min")
+assert.strictEqual(Model.formatSeconds(90), "1 min 30 s")
+
+// refresh rate
+const display = { rates: [60, 165] }
+assert.strictEqual(Model.refreshTarget("auto", display, true), 165)
+assert.strictEqual(Model.refreshTarget("auto", display, false), 60)
+assert.strictEqual(Model.refreshTarget("auto", { rates: [120, 240] }, false), 120)
+assert.strictEqual(Model.refreshTarget("60", display, true), 60)
+assert.strictEqual(Model.refreshTarget("144", display, true), 0)
+assert.strictEqual(Model.refreshTarget(null, display, true), 0)
+
+// fan curves
+const pts = [{ t: 40, p: 10 }, { t: 50, p: 20 }, { t: 60, p: 30 }]
+assert.strictEqual(Model.curveString(pts), "40:10,50:20,60:30")
+assert.deepStrictEqual(Model.clampPoint(pts, 1, 70, 120), { t: 60, p: 100 }, "stays under the next point and 100 %")
+assert.deepStrictEqual(Model.clampPoint(pts, 1, 30, -5), { t: 40, p: 0 })
 
 console.log("model tests passed")

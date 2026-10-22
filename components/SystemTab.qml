@@ -1,0 +1,204 @@
+import QtQuick
+import qs.Commons
+import qs.Ui
+import "../Model.js" as Model
+
+// Battery limit, display, FN-lock, firmware switches and the GPU.
+Column {
+  id: tab
+
+  property var deck: null
+  readonly property var service: deck ? deck.service : null
+  readonly property var status: deck ? deck.status : null
+  readonly property var battery: status && status.battery ? status.battery : null
+  readonly property var display: status && status.display ? status.display : null
+  readonly property var armoury: status && status.armoury ? status.armoury : ({})
+  readonly property int limit: battery && service ? service.pick("battery.limit", battery.limit) : 100
+
+  function armouryOn(name) {
+    var attr = armoury[name]
+    return attr && service ? Number(service.pick("armoury." + name, attr.value)) === 1 : false
+  }
+
+  spacing: Style.space(12)
+
+  // ---------- Battery ----------
+  Column {
+    width: parent.width
+    spacing: Style.space(8)
+    visible: !!tab.battery && tab.battery.limit !== null
+
+    SliderField {
+      width: parent.width
+      label: "Charge limit (%)"
+      from: 20
+      to: 100
+      step: 1
+      showField: true
+      value: tab.limit
+      bar: tab.deck.bar
+      foreground: tab.deck.fg
+      fontFamily: tab.deck.fontFamily
+      onCommitted: function(v) { tab.service.setChargeLimit(Math.max(20, Math.min(100, Math.round(v)))) }
+    }
+
+    Seg {
+      width: parent.width
+      options: [
+        { value: 60, label: "60%", hint: "Plugged in most of the time" },
+        { value: 80, label: "80%", hint: "A good everyday balance" },
+        { value: 100, label: "100%", hint: "Full charge" }
+      ]
+      value: tab.limit
+      foreground: tab.deck.fg
+      fontFamily: tab.deck.fontFamily
+      onPicked: function(v) { tab.service.setChargeLimit(v) }
+    }
+
+    Item {
+      width: parent.width
+      height: Math.max(onceButton.visible ? onceButton.implicitHeight : 0, onceText.implicitHeight)
+
+      Text {
+        id: onceText
+        anchors.left: parent.left
+        anchors.right: onceButton.left
+        anchors.rightMargin: Style.space(10)
+        anchors.verticalCenter: parent.verticalCenter
+        textFormat: Text.PlainText
+        wrapMode: Text.Wrap
+        text: tab.limit < 100 ? "Stops charging at " + tab.limit + "% to spare the battery" : "Charges to full"
+        color: tab.deck.fg
+        opacity: 0.55
+        font.family: tab.deck.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+
+      Button {
+        id: onceButton
+        anchors.right: parent.right
+        visible: tab.limit < 100
+        text: "Full once"
+        tooltipText: "Charge to 100% this time only, then go back to the limit"
+        fontSize: Style.font.bodySmall
+        foreground: tab.deck.fg
+        fontFamily: tab.deck.fontFamily
+        bordered: true
+        onClicked: tab.service.chargeOnce()
+      }
+    }
+  }
+
+  // ---------- Display ----------
+  PanelSeparator { foreground: tab.deck.fg; visible: !!tab.display }
+
+  Column {
+    width: parent.width
+    spacing: Style.space(8)
+    visible: !!tab.display
+
+    SectionLabel { text: "REFRESH RATE"; foreground: tab.deck.fg; fontFamily: tab.deck.fontFamily }
+
+    Seg {
+      width: parent.width
+      options: [{ value: "auto", label: "Auto", hint: "Highest when plugged in, 60 Hz on battery" }]
+        .concat((tab.display ? tab.display.rates : []).map(function(r) { return { value: String(r), label: r + " Hz" } }))
+      value: tab.service && tab.service.settings.refresh
+        ? tab.service.settings.refresh
+        : String(tab.service && tab.display ? tab.service.pick("display.refresh", tab.display.refresh) : "")
+      foreground: tab.deck.fg
+      fontFamily: tab.deck.fontFamily
+      onPicked: function(v) { tab.service.setRefreshMode(v) }
+    }
+
+    SwitchRow {
+      width: parent.width
+      visible: !!tab.armoury.panel_overdrive
+      label: "Panel overdrive"
+      hint: "Faster pixel response, less ghosting"
+      checked: tab.armouryOn("panel_overdrive")
+      foreground: tab.deck.fg
+      fontFamily: tab.deck.fontFamily
+      onToggled: tab.service.setArmoury("panel_overdrive", checked ? 0 : 1)
+    }
+  }
+
+  // ---------- Keyboard and firmware ----------
+  PanelSeparator { foreground: tab.deck.fg }
+
+  SectionLabel { text: "KEYBOARD AND FIRMWARE"; foreground: tab.deck.fg; fontFamily: tab.deck.fontFamily }
+
+  SwitchRow {
+    width: parent.width
+    readonly property bool available: !!(tab.status && tab.status.fnlock && tab.status.fnlock.available)
+    interactive: available
+    label: "FN-lock"
+    hint: available ? "Action row does its printed media actions; hold Fn for F1–F12. Shift+Esc toggles too"
+                    : "Not set up: needs the fnlock command (see the README)"
+    checked: available && tab.service ? !!tab.service.pick("fnlock", tab.status.fnlock.on) : false
+    foreground: tab.deck.fg
+    fontFamily: tab.deck.fontFamily
+    onToggled: tab.service.setFnlock(!checked)
+  }
+
+  SwitchRow {
+    width: parent.width
+    visible: !!tab.armoury.boot_sound
+    label: "Boot sound"
+    hint: "The chime when the laptop powers on"
+    checked: tab.armouryOn("boot_sound")
+    foreground: tab.deck.fg
+    fontFamily: tab.deck.fontFamily
+    onToggled: tab.service.setArmoury("boot_sound", checked ? 0 : 1)
+  }
+
+  // ---------- GPU ----------
+  PanelSeparator { foreground: tab.deck.fg; visible: !!tab.status && tab.status.dgpu !== "absent" }
+
+  Item {
+    width: parent.width
+    height: Math.max(gpuButton.implicitHeight, gpuText.implicitHeight)
+    visible: !!tab.status && tab.status.dgpu !== "absent"
+
+    Column {
+      id: gpuText
+      anchors.left: parent.left
+      anchors.right: gpuButton.left
+      anchors.rightMargin: Style.space(10)
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: Style.space(1)
+
+      Text {
+        textFormat: Text.PlainText
+        text: "Dedicated GPU " + (tab.status ? Model.dgpuLabel(tab.status.dgpu) : "")
+        color: tab.deck.fg
+        font.family: tab.deck.fontFamily
+        font.pixelSize: Style.font.bodySmall
+      }
+
+      Text {
+        width: parent.width
+        textFormat: Text.PlainText
+        wrapMode: Text.Wrap
+        text: "Asleep costs about 0 W. Switching modes needs a reboot"
+        color: tab.deck.fg
+        opacity: 0.55
+        font.family: tab.deck.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+    }
+
+    Button {
+      id: gpuButton
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      text: "Switch mode…"
+      tooltipText: "Opens Omarchy's hybrid GPU switch in a terminal"
+      fontSize: Style.font.bodySmall
+      foreground: tab.deck.fg
+      fontFamily: tab.deck.fontFamily
+      bordered: true
+      onClicked: tab.service.switchGpuMode()
+    }
+  }
+}

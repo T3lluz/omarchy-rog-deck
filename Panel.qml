@@ -25,9 +25,18 @@ Panel {
   readonly property var activeInfo: Model.profileInfo(activeProfile)
   readonly property bool ready: !!status && status.asusd === true
 
-  readonly property bool barTemps: setting("barTemps", false) === true
-  readonly property bool barFans: setting("barFans", false) === true
-  readonly property bool barLive: (barTemps || barFans) && !vertical
+  // The stats picked for the bar, in bar order. Picked in the System tab or
+  // the widget settings; with none, the bar shows only the mode icon.
+  readonly property var barStats: {
+    var stats = []
+    for (var i = 0; i < Model.BAR_STATS.length; i++) {
+      var option = Model.BAR_STATS[i]
+      if (setting(option.key, option.fallback) === true) stats.push(option.stat)
+    }
+    return stats
+  }
+  readonly property bool barLive: barStats.length > 0 && !vertical
+  readonly property var barParts: barLive ? Model.barParts(status && service ? service.withActive() : null, barStats) : []
   readonly property bool vertical: bar ? bar.vertical : false
   readonly property bool watching: opened || barLive
   property bool countedWatch: false
@@ -53,21 +62,30 @@ Panel {
     return "main"
   }
 
-  readonly property string barText: {
-    var parts = []
-    if (barLive && status) {
-      if (barTemps) parts.push(Model.temperature(status.temps ? status.temps.cpu : null))
-      if (barFans) parts.push("󰈐 " + Model.rpm(Model.maxFan(status)))
-    }
-    parts.push(activeInfo.icon)
-    return parts.join("  ")
+  // Persists inline settings to this widget's shell.json entry, applied
+  // locally first so the bar reacts on the click itself.
+  function persistSettings(values) {
+    var entry = { id: root.moduleName }
+    for (var existing in root.settings) if (existing !== "id") entry[existing] = root.settings[existing]
+    for (var key in values) entry[key] = values[key]
+    root.settings = entry
+    if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
+      root.bar.shell.updateEntryInline(root.moduleName, entry)
   }
 
-  function heatColor(celsius) {
+  function setBarStat(key, on) {
+    var values = {}
+    values[key] = on
+    persistSettings(values)
+  }
+
+  // `base` is the colour for a cool reading: the panel's or the bar's.
+  function heatColor(celsius, base) {
+    var cool = base === undefined ? fg : base
     var level = Model.heat(celsius)
     if (level === 2) return urgent
-    if (level === 1) return Qt.tint(fg, Qt.rgba(urgent.r, urgent.g, urgent.b, 0.45))
-    return fg
+    if (level === 1) return Qt.tint(cool, Qt.rgba(urgent.r, urgent.g, urgent.b, 0.45))
+    return cool
   }
 
   function selectTab(step) {
@@ -130,19 +148,57 @@ Panel {
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
-  BarIconButton {
+  WidgetButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.barText
-    slotSize: root.barLive ? Math.max(Style.bar.iconSlot, glyphPaintedWidth + Style.space(14)) : Style.bar.iconSlot
+    hasVisualContent: true
     dimmed: !root.ready
     tooltipText: root.opened ? "" : Model.tooltip(root.status && root.service ? root.service.withActive() : null)
+    fixedWidth: root.vertical ? -1 : (root.barParts.length > 0 ? content.implicitWidth + scaledHorizontalMargin * 2 : Style.bar.iconSlot)
+    fixedHeight: root.vertical ? Style.bar.iconSlot : -1
     onPressed: function(b) {
       if (b === Qt.MiddleButton) { if (root.service) root.service.toggleKbd() }
       else root.toggle()
     }
     onWheelMoved: function(delta) { if (root.service) root.service.stepProfile(delta) }
+
+    Row {
+      id: content
+      anchors.centerIn: parent
+      spacing: Style.space(6)
+
+      Item {
+        width: Style.bar.iconCanvas
+        height: Style.bar.iconCanvas
+        anchors.verticalCenter: parent.verticalCenter
+
+        OpticalGlyph {
+          anchors.fill: parent
+          text: root.activeInfo.icon
+          fontFamily: button.fontFamily
+          fontSize: Style.bar.iconFont
+          color: root.barForeground
+        }
+      }
+
+      // One item per stat so the row spacing, not padding characters,
+      // separates them: the same gap as between the icon and the first stat.
+      Repeater {
+        model: root.barParts
+
+        Text {
+          required property var modelData
+          anchors.verticalCenter: parent.verticalCenter
+          textFormat: Text.PlainText
+          text: modelData.text
+          color: modelData.temp !== null ? root.heatColor(modelData.temp, root.barForeground) : root.barForeground
+          font.family: button.fontFamily
+          font.pixelSize: button.fontSize
+          renderType: Text.NativeRendering
+        }
+      }
+    }
   }
 
   KeyboardPanel {

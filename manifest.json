@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.t3lluz.rog-deck",
   "name": "ROG Deck",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": "fredde",
   "license": "MIT",
   "homepage": "https://github.com/T3lluz/omarchy-rog-deck",
@@ -18,16 +18,37 @@
   },
   "barWidget": {
     "displayName": "ROG Deck",
-    "description": "Power mode in the bar (scroll to switch), with temperatures and fans in the tooltip and a full ROG control panel on click.",
+    "description": "The power mode icon in the bar (scroll to switch), plus the stats you pick: temperatures, fans, power, GPU, battery and refresh rate. Click for the full ROG control panel.",
     "category": "System",
-    "aliases": ["asus", "rog", "armoury", "anime", "aura", "fan", "fnlock", "keyboard"],
+    "aliases": [
+      "asus",
+      "rog",
+      "armoury",
+      "anime",
+      "aura",
+      "fan",
+      "fnlock",
+      "keyboard"
+    ],
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
+      "barModeName": false,
       "barTemps": false,
-      "barFans": false
+      "barGpuTemp": false,
+      "barFans": false,
+      "barPower": false,
+      "barDgpu": false,
+      "barBattery": false,
+      "barRefresh": false
     },
     "schema": [
+      {
+        "key": "barModeName",
+        "type": "boolean",
+        "label": "Show the power mode name in the bar",
+        "defaultValue": false
+      },
       {
         "key": "barTemps",
         "type": "boolean",
@@ -35,10 +56,43 @@
         "defaultValue": false
       },
       {
+        "key": "barGpuTemp",
+        "type": "boolean",
+        "label": "Show GPU temperature in the bar",
+        "description": "Only while the NVIDIA GPU is awake; it is never woken to read it.",
+        "defaultValue": false
+      },
+      {
         "key": "barFans",
         "type": "boolean",
         "label": "Show fan speed in the bar",
-        "description": "The fastest of the CPU and GPU fans.",
+        "description": "The faster of the CPU and GPU fans.",
+        "defaultValue": false
+      },
+      {
+        "key": "barPower",
+        "type": "boolean",
+        "label": "Show package power (CPU and iGPU) in the bar",
+        "defaultValue": false
+      },
+      {
+        "key": "barDgpu",
+        "type": "boolean",
+        "label": "Show the NVIDIA GPU state in the bar",
+        "description": "Awake, asleep or off, with its draw while awake.",
+        "defaultValue": false
+      },
+      {
+        "key": "barBattery",
+        "type": "boolean",
+        "label": "Show the battery level in the bar",
+        "defaultValue": false
+      },
+      {
+        "key": "barRefresh",
+        "type": "boolean",
+        "label": "Show the screen refresh rate in the bar",
+        "description": "Turn every bar stat off to show only the power mode icon. You can also pick these in the panel's System tab.",
         "defaultValue": false
       }
     ]

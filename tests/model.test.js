@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, gpuModes, gpuModeInfo, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, formatSeconds }")()
+const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, gpuModes, gpuModeInfo, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, formatSeconds, barParts, BAR_STATS }")()
 
 // Trimmed from a real `bin/rog-deck status` on a GA402NV.
 const status = {
@@ -136,5 +136,22 @@ const pts = [{ t: 40, p: 10 }, { t: 50, p: 20 }, { t: 60, p: 30 }]
 assert.strictEqual(Model.curveString(pts), "40:10,50:20,60:30")
 assert.deepStrictEqual(Model.clampPoint(pts, 1, 70, 120), { t: 60, p: 100 }, "stays under the next point and 100 %")
 assert.deepStrictEqual(Model.clampPoint(pts, 1, 30, -5), { t: 40, p: 0 })
+
+// bar stats
+const barStatus = Object.assign({}, status, { display: { refresh: 165, rates: [60, 165] } })
+assert.deepStrictEqual(Model.barParts(barStatus, []), [])
+assert.deepStrictEqual(Model.barParts(null, ["cpuTemp"]), [])
+assert.deepStrictEqual(Model.barParts({ asusd: false }, ["cpuTemp"]), [])
+assert.deepStrictEqual(Model.barParts(barStatus, ["mode", "cpuTemp", "gpuTemp", "fans", "power", "dgpu", "battery", "refresh"]).map(p => p.text),
+  ["Silent", "󰔏 77°", "󰢮 65°", "󰈐 3.4k", "󰻠 8.8 W", "󰢮 6.2 W", "󰂄 76%", "󰍹 165 Hz"])
+assert.deepStrictEqual(Model.barParts(barStatus, ["refresh", "cpuTemp"]).map(p => p.stat), ["refresh", "cpuTemp"], "keeps the picked order")
+assert.strictEqual(Model.barParts(barStatus, ["cpuTemp"])[0].temp, 77)
+assert.strictEqual(Model.barParts(barStatus, ["fans"])[0].temp, null)
+const asleep = Object.assign({}, barStatus, { ac: false, dgpu: "suspended", temps: { cpu: 50, gpu: null }, watts: { igpu: 12.4, dgpu: null } })
+assert.deepStrictEqual(Model.barParts(asleep, ["gpuTemp", "dgpu", "power", "battery"]).map(p => p.text),
+  ["󰢮 asleep", "󰻠 12 W", "󰁹 76%"], "no GPU temperature while it sleeps")
+assert.strictEqual(new Set(Model.BAR_STATS.map(s => s.key)).size, Model.BAR_STATS.length)
+const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "manifest.json"), "utf8"))
+assert.deepStrictEqual(manifest.barWidget.schema.map(e => e.key), Model.BAR_STATS.map(s => s.key), "manifest offers every bar stat")
 
 console.log("model tests passed")

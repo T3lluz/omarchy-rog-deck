@@ -305,6 +305,58 @@ function clampPoint(points, index, t, p) {
   return { t: Math.max(lo, Math.min(hi, Math.round(t))), p: Math.max(0, Math.min(100, Math.round(p))) }
 }
 
+// ------------------------------------------------------------------ bar
+
+// What the bar can show next to the mode icon, in bar order. `key` is the
+// shell.json setting; barTemps and barFans keep their 0.3 names.
+var BAR_STATS = [
+  { key: "barModeName", stat: "mode", label: "Power mode name", fallback: false },
+  { key: "barTemps", stat: "cpuTemp", label: "CPU temperature", fallback: false },
+  { key: "barGpuTemp", stat: "gpuTemp", label: "GPU temperature", fallback: false },
+  { key: "barFans", stat: "fans", label: "Fan speed", hint: "The faster of the CPU and GPU fans", fallback: false },
+  { key: "barPower", stat: "power", label: "Package power", hint: "CPU and iGPU draw", fallback: false },
+  { key: "barDgpu", stat: "dgpu", label: "NVIDIA GPU state", hint: "Awake, asleep or off, with its draw while awake", fallback: false },
+  { key: "barBattery", stat: "battery", label: "Battery level", fallback: false },
+  { key: "barRefresh", stat: "refresh", label: "Screen refresh rate", fallback: false }
+]
+
+// One entry per picked stat that has a reading: { stat, text, temp }.
+// `temp` is set for temperatures so the bar can colour them by heat.
+function barParts(status, picked) {
+  if (!status || !status.asusd || !picked || picked.length === 0) return []
+  var parts = []
+  var t = status.temps || {}
+  for (var i = 0; i < picked.length; i++) {
+    var stat = picked[i]
+    if (stat === "mode") {
+      parts.push({ stat: stat, text: profileInfo(status.profile && status.profile.active).label, temp: null })
+    } else if (stat === "cpuTemp") {
+      parts.push({ stat: stat, text: "󰔏 " + temperature(t.cpu), temp: t.cpu === undefined ? null : t.cpu })
+    } else if (stat === "gpuTemp") {
+      // No reading while the dGPU sleeps; it is not woken to get one.
+      if (t.gpu !== null && t.gpu !== undefined) parts.push({ stat: stat, text: "󰢮 " + temperature(t.gpu), temp: t.gpu })
+    } else if (stat === "fans") {
+      var fan = maxFan(status)
+      if (fan !== null) parts.push({ stat: stat, text: "󰈐 " + rpm(fan), temp: null })
+    } else if (stat === "power") {
+      var w = status.watts ? status.watts.igpu : null
+      if (w !== null && w !== undefined) parts.push({ stat: stat, text: "󰻠 " + watts(w), temp: null })
+    } else if (stat === "dgpu") {
+      if (status.dgpu) {
+        var dw = status.watts ? status.watts.dgpu : null
+        parts.push({ stat: stat, text: "󰢮 " + (status.dgpu === "active" && dw ? watts(dw) : dgpuLabel(status.dgpu)), temp: null })
+      }
+    } else if (stat === "battery") {
+      var b = status.battery
+      if (b && b.percent !== null && b.percent !== undefined)
+        parts.push({ stat: stat, text: (status.ac ? "󰂄 " : "󰁹 ") + b.percent + "%", temp: null })
+    } else if (stat === "refresh") {
+      if (status.display && status.display.refresh) parts.push({ stat: stat, text: "󰍹 " + status.display.refresh + " Hz", temp: null })
+    }
+  }
+  return parts
+}
+
 function tooltip(status) {
   if (!status) return "ROG Deck: reading the laptop…"
   if (!status.asusd) return "ROG Deck: asusd is not running"

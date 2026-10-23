@@ -8,6 +8,12 @@ The bar icon shows the power mode: scroll it to switch, middle-click it to turn
 the keyboard light on or off, and hover it for temperatures, fans and battery.
 Click it for the panel. Tabs appear only for hardware your laptop has.
 
+Next to the icon the bar can show any of: the mode name, CPU and GPU
+temperature (tinted as they heat up), fan speed, package power, the NVIDIA
+GPU's state or draw, battery level and the screen refresh rate. Pick them in
+the System tab or the widget's settings; with none picked the bar shows only
+the icon. The GPU temperature appears only while the dGPU is awake.
+
 ## Panel
 
 **Main**
@@ -53,6 +59,8 @@ Click it for the panel. Tabs appear only for hardware your laptop has.
 - GPU mode: Integrated (NVIDIA off), Hybrid, or Dedicated (MUX: NVIDIA drives
   the built-in screen). A switch only takes hold on restart, so picking a mode
   asks first, then restarts. Picking the running mode cancels a pending switch.
+- Show in the bar: a switch per bar stat, saved to this widget's entry in
+  `~/.config/omarchy/shell.json`.
 
 ## What runs in the background
 

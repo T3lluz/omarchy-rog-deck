@@ -3,7 +3,8 @@ import qs.Commons
 import qs.Ui
 import "../Model.js" as Model
 
-// Battery limit, display, FN-lock, firmware switches and the GPU.
+// Battery limit, display, FN-lock, firmware switches, the GPU, and what the
+// bar shows.
 Column {
   id: tab
 
@@ -233,6 +234,49 @@ Column {
       fontFamily: tab.deck.fontFamily
       bordered: true
       onClicked: tab.deck.askGpuMode(tab.gpuNext)
+    }
+  }
+
+  PanelSeparator { foreground: tab.deck.fg }
+
+  // ---------- Bar ----------
+  SectionHeader {
+    icon: "󰍜"
+    title: "SHOW IN THE BAR"
+    detail: tab.deck.barStats.length === 0 ? "ICON ONLY" : ""
+    foreground: tab.deck.fg
+    fontFamily: tab.deck.fontFamily
+  }
+
+  Column {
+    width: parent.width
+    spacing: Style.space(6)
+
+    Repeater {
+      model: Model.BAR_STATS
+
+      SwitchRow {
+        required property var modelData
+        readonly property bool on: tab.deck.setting(modelData.key, modelData.fallback) === true
+        width: parent.width
+        label: modelData.label
+        hint: modelData.hint || ""
+        checked: on
+        foreground: tab.deck.fg
+        fontFamily: tab.deck.fontFamily
+        onToggled: tab.deck.setBarStat(modelData.key, !on)
+      }
+    }
+
+    Text {
+      width: parent.width
+      textFormat: Text.PlainText
+      wrapMode: Text.Wrap
+      text: "Turn everything off to show only the power mode icon."
+      color: tab.deck.fg
+      opacity: 0.55
+      font.family: tab.deck.fontFamily
+      font.pixelSize: Style.font.caption
     }
   }
 }

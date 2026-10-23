@@ -3,11 +3,13 @@
 // Pure parsing and formatting for the JSON from bin/rog-deck status.
 // Nothing here touches QML, so tests/model.test.js can run it under node.
 
-// power-profiles-daemon names, in tile order, with the names ROG uses.
+// power-profiles-daemon names, in tile order, with the names ROG uses. The
+// glyphs are for the OSD; the bar and panel draw components/ModeIcon.qml,
+// the same leaf, gauge and flame, animated.
 var PROFILES = [
   { key: "power-saver", label: "Silent", icon: "󰌪", hint: "Quiet fans, low power, longest battery" },
   { key: "balanced", label: "Balanced", icon: "󰊚", hint: "Everyday mode" },
-  { key: "performance", label: "Turbo", icon: "󰓅", hint: "Full CPU and GPU power, louder fans" }
+  { key: "performance", label: "Turbo", icon: "󰈸", hint: "Full CPU and GPU power, louder fans" }
 ]
 
 function parseStatus(raw) {

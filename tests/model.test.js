@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, gpuModes, gpuModeInfo, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, formatSeconds, barParts, BAR_STATS }")()
+const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, gpuModes, gpuModeInfo, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, formatSeconds, barParts, BAR_STATS, PROFILES }")()
 
 // Trimmed from a real `bin/rog-deck status` on a GA402NV.
 const status = {
@@ -152,6 +152,12 @@ assert.deepStrictEqual(Model.barParts(asleep, ["gpuTemp", "dgpu", "power", "batt
   ["󰢮 asleep", "󰻠 12 W", "󰁹 76%"], "no GPU temperature while it sleeps")
 assert.strictEqual(new Set(Model.BAR_STATS.map(s => s.key)).size, Model.BAR_STATS.length)
 const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "manifest.json"), "utf8"))
-assert.deepStrictEqual(manifest.barWidget.schema.map(e => e.key), Model.BAR_STATS.map(s => s.key), "manifest offers every bar stat")
+assert.deepStrictEqual(manifest.barWidget.schema.map(e => e.key), Model.BAR_STATS.map(s => s.key).concat(["barAnimate"]), "manifest offers every bar stat, then the animation switch")
+for (const entry of manifest.barWidget.schema) assert.strictEqual(manifest.barWidget.defaults[entry.key], entry.defaultValue, entry.key + " default agrees")
+
+// Each mode has its own OSD glyph; Turbo's is the flame the bar draws.
+assert.deepStrictEqual(Model.PROFILES.map(p => p.label), ["Silent", "Balanced", "Turbo"])
+assert.strictEqual(new Set(Model.PROFILES.map(p => p.icon)).size, 3)
+assert.strictEqual(Model.profileInfo("performance").icon.codePointAt(0), 0xf0238)
 
 console.log("model tests passed")

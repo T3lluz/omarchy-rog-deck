@@ -35,6 +35,8 @@ Panel {
     }
     return stats
   }
+  // The mode icon moves in the bar unless turned off (System tab).
+  readonly property bool barAnimated: setting("barAnimate", true) === true
   readonly property bool barLive: barStats.length > 0 && !vertical
   readonly property var barParts: barLive ? Model.barParts(status && service ? service.withActive() : null, barStats) : []
   readonly property bool vertical: bar ? bar.vertical : false
@@ -62,16 +64,10 @@ Panel {
     return "main"
   }
 
-  // Persists inline settings to this widget's shell.json entry, applied
-  // locally first so the bar reacts on the click itself.
-  function persistSettings(values) {
-    var entry = { id: root.moduleName }
-    for (var existing in root.settings) if (existing !== "id") entry[existing] = root.settings[existing]
-    for (var key in values) entry[key] = values[key]
-    root.settings = entry
-    if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
-      root.bar.shell.updateEntryInline(root.moduleName, entry)
-  }
+  // Settings come from shell.json itself rather than the bar's copy, so
+  // every monitor agrees after a reload (WidgetSettings.qml).
+  function setting(name, fallback) { return prefs.get(name, fallback) }
+  function persistSettings(values) { prefs.save(values) }
 
   function setBarStat(key, on) {
     var values = {}
@@ -137,6 +133,13 @@ Panel {
     if (service) service.refreshFans()
   }
 
+  WidgetSettings {
+    id: prefs
+    moduleName: root.moduleName
+    injected: root.settings
+    shell: root.bar ? root.bar.shell : null
+  }
+
   // The service may load after the bar does.
   Timer {
     interval: 1000
@@ -168,18 +171,13 @@ Panel {
       anchors.centerIn: parent
       spacing: Style.space(6)
 
-      Item {
-        width: Style.bar.iconCanvas
-        height: Style.bar.iconCanvas
+      ModeIcon {
         anchors.verticalCenter: parent.verticalCenter
-
-        OpticalGlyph {
-          anchors.fill: parent
-          text: root.activeInfo.icon
-          fontFamily: button.fontFamily
-          fontSize: Style.bar.iconFont
-          color: root.barForeground
-        }
+        size: Style.bar.iconCanvas
+        mode: root.activeProfile
+        color: root.barForeground
+        accent: root.accent
+        animated: root.barAnimated
       }
 
       // One item per stat so the row spacing, not padding characters,
@@ -233,13 +231,13 @@ Panel {
           width: parent.width
           implicitHeight: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight)
 
-          Text {
+          ModeIcon {
             id: heroIcon
-            textFormat: Text.PlainText
-            text: root.activeInfo.icon
+            size: Style.font.display
+            mode: root.activeProfile
             color: root.fg
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.display
+            accent: root.accent
+            animated: root.opened
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
           }

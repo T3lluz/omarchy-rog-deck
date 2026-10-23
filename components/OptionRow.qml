@@ -9,6 +9,8 @@ CursorSurface {
   id: row
 
   property string icon: ""
+  // Drawn in place of the `icon` glyph when set.
+  property Component iconComponent: null
   property string title: ""
   property string subtitle: ""
   property string detail: ""
@@ -30,15 +32,25 @@ CursorSurface {
     anchors.rightMargin: Style.space(10)
     spacing: Style.space(10)
 
-    Text {
+    Item {
       anchors.verticalCenter: parent.verticalCenter
       width: Style.space(22)
-      horizontalAlignment: Text.AlignHCenter
-      textFormat: Text.PlainText
-      text: row.icon
-      color: row.foreground
-      font.family: row.fontFamily
-      font.pixelSize: Style.font.title
+      height: Style.font.title
+
+      Text {
+        visible: !row.iconComponent
+        anchors.centerIn: parent
+        textFormat: Text.PlainText
+        text: row.icon
+        color: row.foreground
+        font.family: row.fontFamily
+        font.pixelSize: Style.font.title
+      }
+
+      Loader {
+        anchors.centerIn: parent
+        sourceComponent: row.iconComponent
+      }
     }
 
     Column {

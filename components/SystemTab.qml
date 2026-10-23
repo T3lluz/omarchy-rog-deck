@@ -268,6 +268,16 @@ Column {
       }
     }
 
+    SwitchRow {
+      width: parent.width
+      label: "Animate the mode icon"
+      hint: "Turbo flickers, Balanced idles, Silent sways. Off keeps them still"
+      checked: tab.deck.barAnimated
+      foreground: tab.deck.fg
+      fontFamily: tab.deck.fontFamily
+      onToggled: tab.deck.setBarStat("barAnimate", !tab.deck.barAnimated)
+    }
+
     Text {
       width: parent.width
       textFormat: Text.PlainText

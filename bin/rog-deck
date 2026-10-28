@@ -5,7 +5,8 @@ Everything goes through interfaces a normal user may touch: asusd on the
 system bus, power-profiles-daemon (via omarchy-powerprofiles-set), logind
 (brightnessctl), sysfs reads and hyprctl. FN-lock calls the user's own
 `fnlock` tool, which carries its own sudoers rule. The one root step is
-writing /etc/supergfxd.conf for Integrated GPU mode, done through pkexec.
+Integrated GPU mode: installing supergfxctl the first time and writing
+/etc/supergfxd.conf, done through pkexec.
 
   rog-deck status                          one JSON snapshot of everything the panel shows
   rog-deck profile <name|next|prev>        set the power mode for the current power source
@@ -38,6 +39,10 @@ writing /etc/supergfxd.conf for Integrated GPU mode, done through pkexec.
   rog-deck fans custom <mode> <on|off>
   rog-deck fans preset <mode> <silent|stock|cool|max>
   rog-deck fans reset <mode>
+
+  rog-deck version                         the installed plugin version
+  rog-deck update check                    JSON: is a newer version on the plugin's git remote
+  rog-deck update apply                    fast-forward to it (local edits are stashed first)
 """
 
 import glob
@@ -46,6 +51,10 @@ import os
 import shutil
 import subprocess
 import sys
+import time
+
+# The shell reloads every plugin when a file appears in the plugin folder.
+sys.dont_write_bytecode = True
 
 ASUSD = "xyz.ljones.Asusd"
 ROOT = "/xyz/ljones"
@@ -60,12 +69,35 @@ SUPERGFXD_DELAY = "/etc/systemd/system/supergfxd.service.d/delay-start.conf"
 FORCE_IGPU_HOOK = "/usr/lib/systemd/system-sleep/force-igpu"
 GPU_MODES = ("integrated", "hybrid", "dedicated")
 # Run as root through pkexec; $1 is Integrated or Hybrid, $2 OMARCHY_PATH.
-# Mirrors omarchy-toggle-hybrid-gpu: Integrated needs supergfxd to start late
-# (it can freeze boot otherwise) and a sleep hook that turns the dGPU back off
-# after resume, since the G14 wakes up in Hybrid.
+# Mirrors omarchy-toggle-hybrid-gpu, including installing supergfxctl the
+# first time: Integrated needs supergfxd to start late (it can freeze boot
+# otherwise) and a sleep hook that turns the dGPU back off after resume,
+# since the G14 wakes up in Hybrid.
+#
+# Integrated is supergfxd's job rather than the firmware dgpu_disable flag:
+# asusd can only write that flag at shutdown, and by then nvidia_drm (loaded
+# from the initramfs) holds the card, so the write fails with EIO and the
+# laptop comes back up in Hybrid.
 SUPERGFXD_SCRIPT = r"""
 set -e
 conf=/etc/supergfxd.conf
+if [ ! -x /usr/bin/supergfxctl ]; then
+  pacman -S --needed --noconfirm supergfxctl
+fi
+if [ ! -f "$conf" ]; then
+  cat > "$conf" <<'CONF'
+{
+  "mode": "Hybrid",
+  "vfio_enable": true,
+  "vfio_save": false,
+  "always_reboot": false,
+  "no_logind": false,
+  "logout_timeout_s": 180,
+  "hotplug_type": "None"
+}
+CONF
+fi
+systemctl enable supergfxd.service >/dev/null 2>&1 || true
 if [ "$1" = Integrated ]; then
   install -D -m 0644 "$2/default/systemd/system/supergfxd.service.d/delay-start.conf" %s
   install -D -m 0755 "$2/default/systemd/system-sleep/force-igpu" %s
@@ -445,6 +477,7 @@ def status():
     dgpu = dgpu_status()
     temps, watts, fans = sensors(dgpu)
     return {
+        "version": manifest().get("version"),
         "asusd": platform is not None,
         "asusdVersion": platform.get("Version") if platform else None,
         "model": read("/sys/class/dmi/id/product_name"),
@@ -759,28 +792,37 @@ def supergfxd_mode():
         return None
 
 
+def supergfx_mode():
+    """supergfxd's configured mode, or None when it isn't set up."""
+    return supergfxd_mode() if shutil.which("supergfxctl") else None
+
+
 def gpu_status():
     mux, mux_queued = armoury_attr("gpu_mux_mode")
     disable, disable_queued = armoury_attr("dgpu_disable")
     if nvidia_device() is None and mux is None and disable is None:
         return None
-    gfx = supergfxd_mode()
+    gfx = supergfx_mode()
     modes = []
-    if gfx is not None and shutil.which("supergfxctl"):
+    # supergfxd does Integrated. Without it, the first switch installs it,
+    # which needs pacman.
+    if gfx is not None or shutil.which("pacman"):
         modes.append("integrated")
     modes.append("hybrid")
     if mux is not None:
         modes.append("dedicated")
     mux_next = mux if mux_queued is None else mux_queued
-    disable_next = disable if disable_queued is None else disable_queued
     if mux_next == 0:
         upcoming = "dedicated"
-    elif gfx == "Integrated" or disable_next == 1:
+    # A dgpu_disable=1 that is only queued is left out: asusd's shutdown
+    # write of it fails while the NVIDIA driver is loaded (see SUPERGFXD_SCRIPT).
+    elif gfx == "Integrated" or (disable == 1 and disable_queued != 0):
         upcoming = "integrated"
     else:
         upcoming = "hybrid"
     running = running_gpu_mode()
-    return {"mode": running, "next": upcoming, "modes": modes, "restart": running != upcoming}
+    return {"mode": running, "next": upcoming, "modes": modes, "restart": running != upcoming,
+            "needsSetup": gfx is None}
 
 
 def write_supergfxd(mode):
@@ -790,8 +832,9 @@ def write_supergfxd(mode):
             if not os.path.exists(source):
                 fail("Omarchy's %s is missing; can't set up Integrated mode safely" % source)
     try:
+        # Long enough for the password prompt plus a first supergfxctl download.
         out = subprocess.run(["pkexec", "/bin/sh", "-c", SUPERGFXD_SCRIPT, "rog-deck-gpu", mode, OMARCHY_PATH],
-                             capture_output=True, text=True, timeout=300)
+                             capture_output=True, text=True, timeout=600)
     except FileNotFoundError:
         fail("pkexec is not installed")
     except subprocess.TimeoutExpired:
@@ -812,9 +855,10 @@ def gpu_set(target, restart=False):
     mux, mux_queued = armoury_attr("gpu_mux_mode")
     disable, disable_queued = armoury_attr("dgpu_disable")
 
-    # 1. supergfxd decides Integrated vs Hybrid at boot while the MUX is on Hybrid.
-    gfx = supergfxd_mode()
-    if gfx is not None:
+    # 1. supergfxd decides Integrated vs Hybrid at boot while the MUX is on
+    # Hybrid. Integrated sets it up if it isn't yet.
+    gfx = supergfx_mode()
+    if gfx is not None or target == "integrated":
         want = "Integrated" if target == "integrated" else "Hybrid"
         helpers = [os.path.exists(p) for p in (SUPERGFXD_DELAY, FORCE_IGPU_HOOK)]
         settled = all(helpers) if target == "integrated" else not any(helpers)
@@ -822,12 +866,15 @@ def gpu_set(target, restart=False):
             write_supergfxd(want)
 
     # 2. A firmware-disabled dGPU has to come back before Hybrid or Dedicated.
-    if target != "integrated" and disable is not None:
+    # A queued dgpu_disable=1 (from an older ROG Deck) is cancelled for every
+    # mode: asusd can't apply it at shutdown, and trying stalls it for 30 s.
+    if disable is not None:
         if target == "dedicated" and disable == 1:
             # The kernel refuses the MUX switch while dgpu_disable is still 1,
             # and asusd's shutdown queue doesn't promise the order of writes.
             fail("the dGPU is switched off in firmware: switch to Hybrid and restart first")
-        if (disable if disable_queued is None else disable_queued) == 1:
+        disable_next = disable if disable_queued is None else disable_queued
+        if disable_next == 1 and (target != "integrated" or disable_queued == 1):
             act(["asusctl", "armoury", "set", "dgpu_disable", "0"])
 
     # 3. The MUX: 0 hands the panel to the dGPU, 1 to the iGPU.
@@ -966,6 +1013,116 @@ def fans(args):
         fail("unknown fans command: " + " ".join(args))
 
 
+# --------------------------------------------------------------- updates
+
+PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+UPDATE_STATE = os.path.join(STATE_HOME, "rog-deck", "update.json")
+
+
+def git(*args, timeout=10):
+    """stdout of a git command in the plugin folder, or None if it failed."""
+    os.environ["GIT_TERMINAL_PROMPT"] = "0"
+    os.environ.setdefault("GIT_SSH_COMMAND", "ssh -oBatchMode=yes")
+    return run(["git", "-C", PLUGIN_DIR, *args], timeout=timeout)
+
+
+def manifest(ref=None):
+    text = git("show", ref + ":manifest.json") if ref else read(os.path.join(PLUGIN_DIR, "manifest.json"))
+    try:
+        data = json.loads(text or "")
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def update_check():
+    """Compare the installed copy with its git remote.
+
+    Fetching only writes inside .git, which the shell's plugin watcher
+    ignores, so a check never reloads the plugins.
+    """
+    result = {"current": manifest().get("version"), "latest": None, "available": False,
+              "managed": False, "dirty": False, "notes": [], "error": None, "checked": int(time.time())}
+    if not os.path.isdir(os.path.join(PLUGIN_DIR, ".git")) or not shutil.which("git"):
+        result["error"] = "Not installed from git, so it can't update itself"
+        return result
+    result["managed"] = True
+    result["dirty"] = bool((git("status", "--porcelain", "--untracked-files=no") or "").strip())
+    if git("fetch", "--quiet", "origin", "HEAD", timeout=30) is None:
+        result["error"] = "Couldn't reach the update server"
+        return result
+    head, fetched = git("rev-parse", "HEAD"), git("rev-parse", "FETCH_HEAD")
+    result["latest"] = manifest("FETCH_HEAD").get("version") or result["current"]
+    if head == fetched:
+        return result
+    if git("merge-base", "--is-ancestor", "HEAD", "FETCH_HEAD") is None:
+        # Local commits, as in a development checkout: leave it to git.
+        result["error"] = "This copy has commits of its own; update it with git"
+        return result
+    result["available"] = True
+    result["notes"] = [line for line in (git("log", "--format=%s", "HEAD..FETCH_HEAD") or "").splitlines() if line][:6]
+    return result
+
+
+def write_update_state(state, message="", version=None):
+    os.makedirs(os.path.dirname(UPDATE_STATE), exist_ok=True)
+    tmp = UPDATE_STATE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump({"state": state, "message": message, "version": version, "at": int(time.time())}, f)
+    os.replace(tmp, UPDATE_STATE)
+
+
+def notify(summary, body=""):
+    if shutil.which("notify-send"):
+        run(["notify-send", "-a", "ROG Deck", "-i", "system-software-update", summary, body])
+
+
+def update_apply():
+    """Fast-forward to the remote and let the shell reload the plugin.
+
+    The panel starts this detached: the reload ends the panel's processes,
+    and the result is left in UPDATE_STATE for the reloaded panel to show.
+    """
+    write_update_state("updating", "Updating…")
+    before = manifest().get("version")
+    stashed = False
+    try:
+        if not os.path.isdir(os.path.join(PLUGIN_DIR, ".git")):
+            fail("not installed from git, so it can't update itself")
+        # omarchy plugin update refuses to fast-forward over local edits; keep
+        # them in a stash rather than lose them.
+        if (git("status", "--porcelain", "--untracked-files=no") or "").strip():
+            act(["git", "-C", PLUGIN_DIR, "stash", "push", "-m", "ROG Deck: local edits before updating from " + str(before)])
+            stashed = True
+        tool = shutil.which("omarchy-plugin-update")
+        if tool:
+            act([tool, manifest().get("id") or "io.github.t3lluz.rog-deck", "--yes"], timeout=180)
+        else:
+            act(["git", "-C", PLUGIN_DIR, "fetch", "--quiet", "origin", "HEAD"], timeout=60)
+            act(["git", "-C", PLUGIN_DIR, "merge", "--ff-only", "FETCH_HEAD"])
+            run(["omarchy-shell", "shell", "rescanPlugins"])
+    except Failure as error:
+        # act() says "<command> failed: <its last line>"; the last line is the news.
+        message = str(error).split(" failed: ", 1)[-1]
+        write_update_state("failed", message)
+        notify("ROG Deck couldn't update", message)
+        raise
+    after = manifest().get("version")
+    note = " Your local edits are kept in git stash." if stashed else ""
+    write_update_state("done", "Updated to %s.%s" % (after, note), after)
+    notify("ROG Deck updated to %s" % after, note.strip())
+    print(after)
+
+
+def update(args):
+    if args == ["check"]:
+        print(json.dumps(update_check(), separators=(",", ":")))
+    elif args == ["apply"]:
+        update_apply()
+    else:
+        fail("update check | update apply")
+
+
 # ------------------------------------------------------------------ main
 
 def main(argv):
@@ -1003,6 +1160,10 @@ def main(argv):
         gpu(args)
     elif command == "fans":
         fans(args)
+    elif command == "version" and not args:
+        print(manifest().get("version") or "unknown")
+    elif command == "update":
+        update(args)
     else:
         fail("unknown command: " + " ".join(argv))
 

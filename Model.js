@@ -133,7 +133,8 @@ function defaultSettings() {
                 colour: "ffffff", colour2: "000000", speed: "med", direction: "right" },
     kbdLastLevel: 2,
     fnlock: null,
-    refresh: null
+    refresh: null,
+    updates: { autoCheck: true }
   }
 }
 
@@ -312,14 +313,14 @@ function clampPoint(points, index, t, p) {
 // What the bar can show next to the mode icon, in bar order. `key` is the
 // shell.json setting; barTemps and barFans keep their 0.3 names.
 var BAR_STATS = [
-  { key: "barModeName", stat: "mode", label: "Power mode name", fallback: false },
-  { key: "barTemps", stat: "cpuTemp", label: "CPU temperature", fallback: false },
-  { key: "barGpuTemp", stat: "gpuTemp", label: "GPU temperature", fallback: false },
-  { key: "barFans", stat: "fans", label: "Fan speed", hint: "The faster of the CPU and GPU fans", fallback: false },
-  { key: "barPower", stat: "power", label: "Package power", hint: "CPU and iGPU draw", fallback: false },
-  { key: "barDgpu", stat: "dgpu", label: "NVIDIA GPU state", hint: "Awake, asleep or off, with its draw while awake", fallback: false },
-  { key: "barBattery", stat: "battery", label: "Battery level", fallback: false },
-  { key: "barRefresh", stat: "refresh", label: "Screen refresh rate", fallback: false }
+  { key: "barModeName", stat: "mode", label: "Mode name", icon: "󰓅", fallback: false },
+  { key: "barTemps", stat: "cpuTemp", label: "CPU temp", icon: "󰔏", fallback: false },
+  { key: "barGpuTemp", stat: "gpuTemp", label: "GPU temp", icon: "󰢮", hint: "Only while the NVIDIA GPU is awake", fallback: false },
+  { key: "barFans", stat: "fans", label: "Fan speed", icon: "󰈐", hint: "The faster of the CPU and GPU fans", fallback: false },
+  { key: "barPower", stat: "power", label: "Package power", icon: "󰻠", hint: "CPU and iGPU draw", fallback: false },
+  { key: "barDgpu", stat: "dgpu", label: "NVIDIA state", icon: "󰾲", hint: "Awake, asleep or off, with its draw while awake", fallback: false },
+  { key: "barBattery", stat: "battery", label: "Battery", icon: "󰁹", fallback: false },
+  { key: "barRefresh", stat: "refresh", label: "Refresh rate", icon: "󰍹", fallback: false }
 ]
 
 // One entry per picked stat that has a reading: { stat, text, temp }.
@@ -374,4 +375,56 @@ function tooltip(status) {
   var battery = batteryLine(status.battery, status.ac)
   if (battery) lines.push("Battery " + battery)
   return lines.join("\n")
+}
+
+// -------------------------------------------------------------- notices
+
+// The confirm prompt for a GPU switch.
+function gpuConfirmText(gpu, mode) {
+  var text = "Switch to " + gpuModeInfo(mode).label + " GPU mode? "
+  if (mode === "integrated" && gpu && gpu.needsSetup)
+    text += "ROG Deck first installs supergfxctl, which asks for your password. "
+  return text + "The laptop then restarts, closing open windows."
+}
+
+// The banner over every tab while a GPU switch waits for a restart, or null.
+function gpuNotice(gpu, next) {
+  if (!gpu || !next || next === gpu.mode) return null
+  return { key: "gpu", tone: "accent", icon: "󰜉", text: "Restart to finish switching to " + gpuModeInfo(next).label + " GPU mode",
+           action: "restart", actionLabel: "Restart" }
+}
+
+function ago(seconds) {
+  var s = Math.max(0, Math.round(Number(seconds) || 0))
+  if (s < 60) return "just now"
+  if (s < 3600) return Math.floor(s / 60) + " min ago"
+  if (s < 86400) return Math.floor(s / 3600) + " h ago"
+  return Math.floor(s / 86400) + " d ago"
+}
+
+// `check` is `rog-deck update check`; `state` is what `rog-deck update apply`
+// left in ~/.local/state/rog-deck/update.json; `now` is in seconds.
+function updateLine(check, state, now) {
+  if (state && state.state === "updating" && now - state.at < 300) return "Updating…"
+  if (!check) return "Not checked yet"
+  if (check.error) return check.error
+  if (check.available) return "Version " + check.latest + " is available"
+  return "Up to date · checked " + ago(now - check.checked)
+}
+
+// The update banner over every tab, or null. A finished update is shown for
+// ten minutes, a failed one for an hour; an interrupted one is forgotten
+// after five.
+function updateNotice(check, state, version, now) {
+  if (state && state.state === "updating" && now - state.at < 300)
+    return { key: "update", tone: "accent", icon: "󰚰", text: "Updating ROG Deck…", busy: true }
+  if (state && state.state === "failed" && now - state.at < 3600)
+    return { key: "update", tone: "urgent", icon: "󰚰", text: "Update failed: " + state.message,
+             action: "update", actionLabel: "Retry", dismissable: true }
+  if (state && state.state === "done" && state.version === version && now - state.at < 600)
+    return { key: "update", tone: "accent", icon: "󰄬", text: "ROG Deck: " + state.message, dismissable: true }
+  if (check && check.available)
+    return { key: "update", tone: "accent", icon: "󰚰", text: "ROG Deck " + check.latest + " is available",
+             action: "update", actionLabel: "Update", dismissable: true }
+  return null
 }

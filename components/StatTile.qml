@@ -65,11 +65,11 @@ BorderSurface {
       Behavior on color { ColorAnimation { duration: 300 } }
     }
 
+    // Always takes its line, so tiles in a row keep one height.
     Text {
       width: parent.width
-      visible: tile.note !== ""
       textFormat: Text.PlainText
-      text: tile.note
+      text: tile.note || " "
       color: tile.foreground
       opacity: 0.55
       elide: Text.ElideRight

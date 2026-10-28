@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "id": "io.github.t3lluz.rog-deck",
   "name": "ROG Deck",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "author": "fredde",
   "license": "MIT",
   "homepage": "https://github.com/T3lluz/omarchy-rog-deck",
-  "description": "Control panel for ASUS ROG laptops: power modes, temperatures and fans, keyboard lighting with auto-off, AniMe Matrix, FN-lock, battery limit and display, from the Omarchy bar.",
+  "description": "Control panel for ASUS ROG laptops: power modes, temperatures and fans, keyboard lighting with auto-off, AniMe Matrix, FN-lock, battery limit, display and GPU mode, from the Omarchy bar. Updates itself from the panel.",
   "kinds": [
     "service",
     "bar-widget"

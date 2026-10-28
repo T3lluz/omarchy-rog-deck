@@ -15,6 +15,13 @@ Column {
   readonly property var watts: status && status.watts ? status.watts : ({})
   readonly property var battery: status ? status.battery : null
   readonly property var anime: status ? status.anime : null
+  // Whether the running mode uses its own fan curve (Fans tab).
+  readonly property string curveNote: {
+    var curves = service ? service.fanCurves : null
+    var mode = curves ? curves[deck.activeProfile] : null
+    if (!mode) return ""
+    return service.pick("fans." + deck.activeProfile, mode.custom) ? "Custom curve" : "Firmware curve"
+  }
 
   spacing: Style.space(12)
 
@@ -92,6 +99,7 @@ Column {
       icon: "󰈐"
       caption: "CPU FAN"
       value: Model.rpm(tab.fans.cpu) + (tab.fans.cpu ? " rpm" : "")
+      note: tab.curveNote
       foreground: tab.deck.fg
       fontFamily: tab.deck.fontFamily
     }
@@ -100,6 +108,7 @@ Column {
       icon: "󰈐"
       caption: "GPU FAN"
       value: Model.rpm(tab.fans.gpu) + (tab.fans.gpu ? " rpm" : "")
+      note: tab.curveNote
       foreground: tab.deck.fg
       fontFamily: tab.deck.fontFamily
     }
@@ -141,7 +150,7 @@ Column {
       icon: "󰍹"
       caption: "SCREEN"
       value: tab.status && tab.status.display ? tab.status.display.refresh + " Hz" : "—"
-      note: tab.service && tab.service.settings.refresh === "auto" ? "Auto" : ""
+      note: tab.service && tab.service.settings.refresh === "auto" ? "Auto rate" : "Fixed rate"
       foreground: tab.deck.fg
       fontFamily: tab.deck.fontFamily
     }

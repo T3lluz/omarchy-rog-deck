@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, gpuModes, gpuModeInfo, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, formatSeconds, barParts, BAR_STATS, PROFILES }")()
+const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, gpuModes, gpuModeInfo, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, formatSeconds, barParts, BAR_STATS, PROFILES, gpuConfirmText, gpuNotice, ago, updateLine, updateNotice }")()
 
 // Trimmed from a real `bin/rog-deck status` on a GA402NV.
 const status = {
@@ -159,5 +159,40 @@ for (const entry of manifest.barWidget.schema) assert.strictEqual(manifest.barWi
 assert.deepStrictEqual(Model.PROFILES.map(p => p.label), ["Silent", "Balanced", "Turbo"])
 assert.strictEqual(new Set(Model.PROFILES.map(p => p.icon)).size, 3)
 assert.strictEqual(Model.profileInfo("performance").icon.codePointAt(0), 0xf0238)
+
+// Every bar stat has a tile icon and a short label for the two-column grid.
+for (const s of Model.BAR_STATS) assert.ok(s.icon && s.label.length <= 14, s.key + " fits a half-width tile")
+assert.strictEqual(Model.defaultSettings().updates.autoCheck, true)
+assert.strictEqual(Model.mergeSettings('{"updates":{"autoCheck":false}}').updates.autoCheck, false)
+
+// GPU switch prompt and the restart banner
+assert.strictEqual(Model.gpuConfirmText({ needsSetup: true }, "integrated"),
+  "Switch to Integrated GPU mode? ROG Deck first installs supergfxctl, which asks for your password. The laptop then restarts, closing open windows.")
+assert.strictEqual(Model.gpuConfirmText({ needsSetup: true }, "hybrid"), "Switch to Hybrid GPU mode? The laptop then restarts, closing open windows.")
+assert.strictEqual(Model.gpuNotice({ mode: "hybrid" }, "hybrid"), null)
+assert.strictEqual(Model.gpuNotice(null, "hybrid"), null)
+assert.strictEqual(Model.gpuNotice({ mode: "dedicated" }, "integrated").text, "Restart to finish switching to Integrated GPU mode")
+
+// updates
+const now = 1000000
+assert.strictEqual(Model.ago(30), "just now")
+assert.strictEqual(Model.ago(300), "5 min ago")
+assert.strictEqual(Model.ago(7300), "2 h ago")
+const upToDate = { current: "0.6.0", latest: "0.6.0", available: false, error: null, checked: now - 120 }
+const newer = { current: "0.6.0", latest: "0.6.1", available: true, error: null, checked: now }
+assert.strictEqual(Model.updateLine(null, null, now), "Not checked yet")
+assert.strictEqual(Model.updateLine(upToDate, null, now), "Up to date · checked 2 min ago")
+assert.strictEqual(Model.updateLine(newer, null, now), "Version 0.6.1 is available")
+assert.strictEqual(Model.updateLine({ error: "Couldn't reach the update server" }, null, now), "Couldn't reach the update server")
+assert.strictEqual(Model.updateLine(newer, { state: "updating", at: now - 10 }, now), "Updating…")
+assert.strictEqual(Model.updateNotice(upToDate, null, "0.6.0", now), null)
+assert.strictEqual(Model.updateNotice(newer, null, "0.6.0", now).actionLabel, "Update")
+assert.strictEqual(Model.updateNotice(newer, { state: "updating", at: now - 10 }, "0.6.0", now).busy, true)
+assert.strictEqual(Model.updateNotice(null, { state: "updating", at: now - 900 }, "0.6.0", now), null, "an interrupted update is forgotten")
+assert.strictEqual(Model.updateNotice(newer, { state: "failed", message: "no network", at: now - 60 }, "0.6.0", now).actionLabel, "Retry")
+assert.strictEqual(Model.updateNotice(null, { state: "done", message: "Updated to 0.6.1.", version: "0.6.1", at: now - 60 }, "0.6.1", now).text,
+  "ROG Deck: Updated to 0.6.1.")
+assert.strictEqual(Model.updateNotice(null, { state: "done", message: "", version: "0.6.1", at: now - 60 }, "0.6.0", now), null,
+  "not shown until the reloaded plugin is the new version")
 
 console.log("model tests passed")

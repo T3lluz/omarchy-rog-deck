@@ -3,8 +3,8 @@ import qs.Commons
 import qs.Ui
 import "../Model.js" as Model
 
-// Battery limit, display, FN-lock, firmware switches, the GPU, and what the
-// bar shows.
+// Battery limit, display, FN-lock, firmware switches, the GPU, what the bar
+// shows, and the plugin's version and updates.
 Column {
   id: tab
 
@@ -19,6 +19,9 @@ Column {
   readonly property var gpu: status && status.gpu ? status.gpu : null
   readonly property string gpuNext: gpu && service ? String(service.pick("gpu.next", gpu.next)) : ""
   readonly property bool gpuPending: !!gpu && gpuNext !== gpu.mode
+  readonly property bool updateBusy: !!service && (service.updateChecking
+    || (!!service.updateState && service.updateState.state === "updating" && service.now - service.updateState.at < 300))
+  readonly property bool updateAvailable: !!service && !!service.updateCheck && service.updateCheck.available === true
 
   function armouryOn(name) {
     var attr = armoury[name]
@@ -26,6 +29,9 @@ Column {
   }
 
   spacing: Style.space(12)
+
+  // Have an answer ready the first time the tab is opened.
+  onVisibleChanged: if (visible && service && !service.updateCheck && !service.updateChecking) service.checkUpdates()
 
   // ---------- Battery ----------
   SectionHeader {
@@ -44,7 +50,7 @@ Column {
 
     SliderField {
       width: parent.width
-      label: "Charge limit (%)"
+      label: "Stop charging at (%)"
       from: 20
       to: 100
       step: 1
@@ -54,19 +60,6 @@ Column {
       foreground: tab.deck.fg
       fontFamily: tab.deck.fontFamily
       onCommitted: function(v) { tab.service.setChargeLimit(Math.max(20, Math.min(100, Math.round(v)))) }
-    }
-
-    Seg {
-      width: parent.width
-      options: [
-        { value: 60, label: "60%", icon: "󰁿", hint: "Plugged in most of the time" },
-        { value: 80, label: "80%", icon: "󰂁", hint: "A good everyday balance" },
-        { value: 100, label: "100%", icon: "󰁹", hint: "Full charge" }
-      ]
-      value: tab.limit
-      foreground: tab.deck.fg
-      fontFamily: tab.deck.fontFamily
-      onPicked: function(v) { tab.service.setChargeLimit(v) }
     }
 
     Item {
@@ -81,7 +74,8 @@ Column {
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
-        text: tab.limit < 100 ? "Stops at " + tab.limit + "% to spare the battery." : "Charges to full."
+        text: tab.limit < 100 ? "Holding below full spares the battery. About 80% suits a laptop that stays plugged in."
+                              : "Charges to full every time."
         color: tab.deck.fg
         opacity: 0.55
         font.family: tab.deck.fontFamily
@@ -199,42 +193,23 @@ Column {
     onPicked: function(v) { tab.deck.askGpuMode(v) }
   }
 
-  Item {
+  Text {
     width: parent.width
-    height: Math.max(restartButton.visible ? restartButton.implicitHeight : 0, gpuText.implicitHeight)
     visible: !!tab.gpu
-
-    Text {
-      id: gpuText
-      anchors.left: parent.left
-      anchors.right: restartButton.visible ? restartButton.left : parent.right
-      anchors.rightMargin: Style.space(10)
-      anchors.verticalCenter: parent.verticalCenter
-      textFormat: Text.PlainText
-      wrapMode: Text.Wrap
-      text: tab.gpuPending
-        ? "Starts in " + Model.gpuModeInfo(tab.gpuNext).label + " mode after the next restart."
-        : Model.gpuModeInfo(tab.gpuNext).hint + ". Switching restarts the laptop."
-      color: tab.deck.fg
-      opacity: 0.55
-      font.family: tab.deck.fontFamily
-      font.pixelSize: Style.font.caption
+    textFormat: Text.PlainText
+    wrapMode: Text.Wrap
+    text: {
+      if (!tab.gpu) return ""
+      if (tab.gpuPending) return "Starts in " + Model.gpuModeInfo(tab.gpuNext).label + " mode after the next restart. Pick " + Model.gpuModeInfo(tab.gpu.mode).label + " to cancel."
+      var line = Model.gpuModeInfo(tab.gpuNext).hint + ". Switching restarts the laptop."
+      if (tab.gpu.needsSetup && tab.gpu.modes.indexOf("integrated") !== -1)
+        line += " Integrated installs supergfxctl the first time, which asks for your password."
+      return line
     }
-
-    Button {
-      id: restartButton
-      anchors.right: parent.right
-      anchors.verticalCenter: parent.verticalCenter
-      visible: tab.gpuPending
-      text: "Restart now"
-      iconText: "󰜉"
-      tooltipText: "Restart to finish switching GPU mode"
-      fontSize: Style.font.bodySmall
-      foreground: tab.deck.fg
-      fontFamily: tab.deck.fontFamily
-      bordered: true
-      onClicked: tab.deck.askGpuMode(tab.gpuNext)
-    }
+    color: tab.deck.fg
+    opacity: 0.55
+    font.family: tab.deck.fontFamily
+    font.pixelSize: Style.font.caption
   }
 
   PanelSeparator { foreground: tab.deck.fg }
@@ -243,50 +218,131 @@ Column {
   SectionHeader {
     icon: "󰍜"
     title: "SHOW IN THE BAR"
-    detail: tab.deck.barStats.length === 0 ? "ICON ONLY" : ""
+    detail: tab.deck.barStats.length === 0 ? "ICON ONLY" : tab.deck.barStats.length + " SHOWN"
     foreground: tab.deck.fg
     fontFamily: tab.deck.fontFamily
   }
 
-  Column {
+  Grid {
+    id: barGrid
     width: parent.width
-    spacing: Style.space(6)
+    columns: 2
+    columnSpacing: Style.space(8)
+    rowSpacing: Style.space(8)
+
+    readonly property real tileWidth: (width - columnSpacing) / 2
 
     Repeater {
       model: Model.BAR_STATS
 
-      SwitchRow {
+      ToggleTile {
         required property var modelData
         readonly property bool on: tab.deck.setting(modelData.key, modelData.fallback) === true
-        width: parent.width
+        width: barGrid.tileWidth
+        icon: modelData.icon
         label: modelData.label
         hint: modelData.hint || ""
         checked: on
         foreground: tab.deck.fg
+        accent: tab.deck.accent
         fontFamily: tab.deck.fontFamily
         onToggled: tab.deck.setBarStat(modelData.key, !on)
       }
     }
+  }
 
-    SwitchRow {
-      width: parent.width
-      label: "Animate the mode icon"
-      hint: "Turbo flickers, Balanced idles, Silent sways. Off keeps them still"
-      checked: tab.deck.barAnimated
-      foreground: tab.deck.fg
-      fontFamily: tab.deck.fontFamily
-      onToggled: tab.deck.setBarStat("barAnimate", !tab.deck.barAnimated)
-    }
+  SwitchRow {
+    width: parent.width
+    icon: "󰐊"
+    label: "Animate the mode icon"
+    hint: "Turbo flickers, Balanced idles, Silent sways"
+    checked: tab.deck.barAnimated
+    foreground: tab.deck.fg
+    fontFamily: tab.deck.fontFamily
+    onToggled: tab.deck.setBarStat("barAnimate", !tab.deck.barAnimated)
+  }
+
+  PanelSeparator { foreground: tab.deck.fg }
+
+  // ---------- About and updates ----------
+  SectionHeader {
+    icon: "󰚰"
+    title: "ROG DECK"
+    detail: tab.status && tab.status.version ? "V" + tab.status.version : ""
+    foreground: tab.deck.fg
+    fontFamily: tab.deck.fontFamily
+  }
+
+  Item {
+    width: parent.width
+    height: Math.max(updateButton.implicitHeight, updateText.implicitHeight)
 
     Text {
-      width: parent.width
+      id: updateText
+      anchors.left: parent.left
+      anchors.right: updateButton.left
+      anchors.rightMargin: Style.space(10)
+      anchors.verticalCenter: parent.verticalCenter
       textFormat: Text.PlainText
       wrapMode: Text.Wrap
-      text: "Turn everything off to show only the power mode icon."
+      text: tab.service ? (tab.service.updateChecking ? "Checking…" : Model.updateLine(tab.service.updateCheck, tab.service.updateState, tab.service.now)) : ""
       color: tab.deck.fg
-      opacity: 0.55
+      opacity: tab.updateAvailable ? 1 : 0.55
       font.family: tab.deck.fontFamily
       font.pixelSize: Style.font.caption
     }
+
+    Button {
+      id: updateButton
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      text: tab.updateAvailable ? "Update" : "Check now"
+      iconText: tab.updateAvailable ? "󰇚" : "󰑓"
+      iconSpinning: !!tab.service && tab.service.updateChecking
+      tooltipText: tab.updateAvailable ? "Download and reload ROG Deck. Your settings are kept" : "Look for a newer ROG Deck"
+      fontSize: Style.font.bodySmall
+      foreground: tab.deck.fg
+      fontFamily: tab.deck.fontFamily
+      bordered: true
+      opacity: tab.updateBusy ? 0.45 : 1
+      onClicked: {
+        if (tab.updateBusy) return
+        if (tab.updateAvailable) tab.service.applyUpdate()
+        else tab.service.checkUpdates()
+      }
+    }
+  }
+
+  Column {
+    width: parent.width
+    spacing: Style.space(2)
+    visible: tab.updateAvailable && tab.service.updateCheck.notes.length > 0
+
+    Repeater {
+      model: tab.updateAvailable ? tab.service.updateCheck.notes : []
+
+      Text {
+        required property string modelData
+        width: parent.width
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        text: "· " + modelData
+        color: tab.deck.fg
+        opacity: 0.7
+        font.family: tab.deck.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+    }
+  }
+
+  SwitchRow {
+    width: parent.width
+    icon: "󰔟"
+    label: "Check for updates automatically"
+    hint: "Looks on GitHub every few hours; updating is always your click"
+    checked: tab.service ? tab.service.settings.updates.autoCheck : true
+    foreground: tab.deck.fg
+    fontFamily: tab.deck.fontFamily
+    onToggled: tab.service.saveSetting(["updates", "autoCheck"], !tab.service.settings.updates.autoCheck)
   }
 }

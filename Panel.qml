@@ -18,6 +18,8 @@ Panel {
   property bool cursorActive: false
   property int profileCursor: 0
   readonly property string gpuAsk: service ? service.gpuAsk : ""
+  // Before the panel is ready only an error is worth a banner.
+  readonly property var notices: service ? service.notices.filter(function(n) { return ready || n.key === "error" }) : []
 
   readonly property var status: service ? service.status : null
   readonly property string activeProfile: service ? service.activeProfile : ""
@@ -94,6 +96,16 @@ Panel {
 
   function askGpuMode(mode) {
     if (service) service.askGpuMode(mode)
+  }
+
+  function noticeAction(notice) {
+    if (!service) return
+    if (notice.action === "restart") {
+      var gpu = status ? status.gpu : null
+      if (gpu) service.askGpuMode(String(service.pick("gpu.next", gpu.next)))
+    } else if (notice.action === "update") {
+      service.applyUpdate()
+    }
   }
 
   function lookupService() {
@@ -311,6 +323,35 @@ Panel {
 
         PanelSeparator { foreground: root.fg; visible: root.ready }
 
+        // Errors, a GPU switch waiting on a restart, and updates: above every
+        // tab, so they can't be missed by staying on another one.
+        Column {
+          width: parent.width
+          spacing: Style.space(8)
+          visible: root.notices.length > 0
+
+          Repeater {
+            model: root.notices
+
+            Notice {
+              required property var modelData
+              width: parent.width
+              icon: modelData.icon || ""
+              text: modelData.text
+              tone: modelData.tone || "accent"
+              actionLabel: modelData.actionLabel || ""
+              busy: !!modelData.busy
+              dismissable: !!modelData.dismissable
+              foreground: root.fg
+              accent: root.accent
+              urgent: root.urgent
+              fontFamily: root.fontFamily
+              onActioned: root.noticeAction(modelData)
+              onDismissed: if (root.service) root.service.dismissNotice(modelData)
+            }
+          }
+        }
+
         // Every tab is built up front and shown by visibility: a Loader can
         // take a few frames to build, which flashed a blank tab on open.
         MainTab { width: parent.width; deck: root; visible: root.ready && root.currentTab === "main" }
@@ -319,15 +360,6 @@ Panel {
         FansTab { width: parent.width; deck: root; visible: root.ready && root.currentTab === "fans" }
         SystemTab { width: parent.width; deck: root; visible: root.ready && root.currentTab === "system" }
 
-        Text {
-          width: parent.width
-          visible: !!root.service && root.service.lastError !== ""
-          text: root.service ? root.service.lastError : ""
-          color: root.urgent
-          wrapMode: Text.Wrap
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-        }
       }
     }
 
@@ -336,7 +368,7 @@ Panel {
       anchors.fill: parent
       z: 10
       opened: root.gpuAsk !== ""
-      message: "Switch to " + Model.gpuModeInfo(root.gpuAsk).label + " GPU mode? The laptop restarts now to finish, closing open windows."
+      message: Model.gpuConfirmText(root.status ? root.status.gpu : null, root.gpuAsk)
       confirmText: "Restart"
       foreground: root.fg
       fontFamily: root.fontFamily

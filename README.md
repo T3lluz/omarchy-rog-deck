@@ -4,7 +4,7 @@
   <p>An Omarchy bar widget and control panel for <b>ASUS ROG</b> laptops, built on <a href="https://asus-linux.org/">asusctl/asusd</a>:<br/>
   power modes, temperatures and fans, keyboard lighting with auto-off, AniMe Matrix, FN-lock, battery limit, display and GPU mode.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v0.5.0-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v0.6.0-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-ff8f6b" />
     <img alt="asusd 6" src="https://img.shields.io/badge/asusd-6-ff8f6b" />
     <a href="https://github.com/T3lluz/omarchy-rog-deck/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-rog-deck/actions/workflows/ci.yml/badge.svg" /></a>
@@ -20,7 +20,9 @@
 
 - **The power mode, animated in the bar:** Silent is a leaf that sways, Balanced a gauge whose needle idles, Turbo a flame that flickers over an ember in your theme's accent. Drawn, not typed, at about 20 frames a second so three monitors stay cheap; turn it off in System.
 - **Scroll the icon** to switch modes, middle-click it for the keyboard light, hover it for temperatures, fans and battery.
-- **Pick the bar stats:** the mode name, CPU and GPU temperature (tinted as they heat up), fan speed, package power, the NVIDIA GPU's state or draw, battery and refresh rate. None picked leaves the icon alone. The GPU temperature appears only while the dGPU is awake.
+- **Pick the bar stats** from a grid of switches in the System tab: the mode name, CPU and GPU temperature (tinted as they heat up), fan speed, package power, the NVIDIA GPU's state or draw, battery and refresh rate. None picked leaves the icon alone. The GPU temperature appears only while the dGPU is awake.
+- **Updates itself:** the System tab checks the plugin's GitHub every few hours and updates in place when you click Update. Local edits in the plugin folder are kept in `git stash` rather than blocking the update.
+- **Banners over every tab** for what needs you: an error, a GPU switch waiting on a restart, or a new version.
 - **Every monitor agrees:** one service owns the state, and the bar settings are read straight from `shell.json`, so a pick made on one screen shows on all of them and survives a restart.
 - Tabs appear only for hardware your laptop has.
 
@@ -32,7 +34,7 @@
 
 **Fans** · A curve per power mode, eight points per fan. Drag a bar or type a point's exact °C and %. Presets: Silent (off until about 70 °C), Stock, Cool, Max, plus Reset. A marker shows the live temperature. Curves go into asusd's own per-mode store, so the right one is on the fans whenever the mode changes.
 
-**System** · Charge limit 20–100 with 60/80/100 presets and "Full once". Refresh rate: Auto (highest on AC, 60 Hz on battery) or fixed. Panel overdrive, FN-lock, boot sound. GPU mode: Integrated (NVIDIA off), Hybrid or Dedicated (MUX); a switch only takes hold on restart, so it asks first. What the bar shows, and whether the icon moves.
+**System** · Charge limit 20–100 (slider or type it) and "Full once". Refresh rate: Auto (highest on AC, 60 Hz on battery) or fixed. Panel overdrive, FN-lock, boot sound. GPU mode: Integrated (NVIDIA off), Hybrid or Dedicated (MUX); a switch only takes hold on restart, so it asks first. What the bar shows, whether the icon moves, the version and updates.
 
 ### In the background
 
@@ -53,7 +55,7 @@ omarchy plugin add https://github.com/T3lluz/omarchy-rog-deck.git --enable
 
 Needs `asusd` running (Omarchy installs `asusctl` on ROG laptops), `power-profiles-daemon` and `brightnessctl`.
 
-The only root step is Integrated GPU mode, which writes `/etc/supergfxd.conf` the same way Omarchy's own GPU switch does, through `pkexec`. Integrated also needs `supergfxctl`.
+The only root step is Integrated GPU mode, done through `pkexec` the same way Omarchy's own GPU switch does it: the first time, it installs `supergfxctl` from the Omarchy repo, then it writes `/etc/supergfxd.conf`. Integrated is supergfxd's job, not the firmware `dgpu_disable` switch: asusd can only write that switch at shutdown, when the NVIDIA driver still holds the card, so the write fails and the laptop starts in Hybrid.
 
 FN-lock calls a `fnlock on|off|status` command on your `PATH` (or in `~/.local/bin`). On a G14 that's a small keyd setup: the Fn key never reaches Linux, so keyd swaps the action row and F1–F12 while the lock is on. Without a `fnlock` command the switch is greyed out.
 
@@ -72,6 +74,9 @@ omarchy-shell io.github.t3lluz.rog-deck toggle          # the panel, on the focu
 omarchy-shell io.github.t3lluz.rog-deck openTab fans    # main | lighting | anime | fans | system
 omarchy-shell io.github.t3lluz.rog-deck gpu hybrid      # integrated | hybrid | dedicated; asks before restarting
 omarchy-shell io.github.t3lluz.rog-deck status          # JSON snapshot
+omarchy-shell io.github.t3lluz.rog-deck version         # installed version
+omarchy-shell io.github.t3lluz.rog-deck checkUpdates    # look for a newer version now
+omarchy-shell io.github.t3lluz.rog-deck update          # install it, if one was found
 ```
 
 The ROG keys, in `~/.config/hypr/bindings.lua`:
@@ -94,7 +99,8 @@ Details that matter:
 - **Effect changes.** The keyboard can keep animating an old effect while asusd reports the new one, so `rog-deck aura` blanks the keyboard, writes the effect, then re-sends the power state and brightness.
 - **Refresh rate.** Hyprland 0.56's Lua config rejects `hyprctl keyword monitor`, so the rate goes through `hyprctl eval "hl.monitor({...})"`. If hyprmoncfg's daemon has an active profile, that profile is saved too, so the change sticks.
 - **GPU readings.** `nvidia-smi` is only asked while the dGPU is already awake.
-- **GPU modes.** The running mode comes from the hardware: no NVIDIA card (or one parked on vfio-pci) is Integrated, an NVIDIA card driving the eDP panel is Dedicated. asusd queues `gpu_mux_mode` and `dgpu_disable` writes (`QueuedGpuValue`) for its `asus-shutdown` helper, so the mode after restart is read from that queue plus supergfxd's config. The restart is `omarchy-system-reboot`.
+- **GPU modes.** The running mode comes from the hardware: no NVIDIA card (or one parked on vfio-pci) is Integrated, an NVIDIA card driving the eDP panel is Dedicated. asusd queues `gpu_mux_mode` writes (`QueuedGpuValue`) for its `asus-shutdown` helper, so the mode after restart is read from that queue plus supergfxd's config. A queued `dgpu_disable=1` from an earlier version is cancelled. The restart is `omarchy-system-reboot`.
+- **Updates.** `rog-deck update check` fetches the plugin's remote (only `.git` changes, which the shell ignores) and compares versions; `rog-deck update apply` runs detached, stashes local edits, and calls `omarchy plugin update`, which fast-forwards, validates and reloads the plugins. The result lands in `~/.local/state/rog-deck/update.json` for the reloaded panel.
 
 ## Development
 
@@ -111,7 +117,7 @@ See [AGENTS.md](AGENTS.md) for how the pieces fit. [docs/PLAN.md](docs/PLAN.md) 
 
 - [Power-Deck](https://github.com/T3lluz/Power-Deck), the KDE Plasma original: AniMe, fan curve and keyboard-idle behaviour, the bar-style curve editor.
 - [omarchy-asus](https://github.com/moneytosms/omarchy-asus) by moneytosms: hardware-gated tabs, every tab built up front, and the Hyprland 0.56 refresh-rate path.
-- [g-helper-linux](https://github.com/utajum/g-helper-linux) and [G-Helper](https://github.com/seerge/g-helper): feature reference.
+- [g-helper-linux](https://github.com/utajum/g-helper-linux) and [G-Helper](https://github.com/seerge/g-helper): feature reference, and the evidence that Eco/Integrated has to happen before the display stack holds the dGPU.
 - [Tabler Icons](https://tabler.io/icons) (MIT): the leaf, gauge and flame outlines the mode icon animates.
 
 ## License

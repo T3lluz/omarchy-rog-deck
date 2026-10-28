@@ -24,6 +24,7 @@ Item {
   readonly property string configDir: (Quickshell.env("XDG_CONFIG_HOME") || home + "/.config") + "/rog-deck"
   readonly property string settingsPath: configDir + "/settings.json"
   readonly property string themeColourPath: home + "/.local/state/omarchy/current/theme/keyboard.rgb"
+  readonly property string updateStatePath: (Quickshell.env("XDG_STATE_HOME") || home + "/.local/state") + "/rog-deck/update.json"
 
   property var status: null
   property var fanCurves: null
@@ -44,6 +45,16 @@ Item {
   property string panelTab: "main"
   // GPU mode waiting on the panel's restart prompt, or "".
   property string gpuAsk: ""
+
+  // `rog-deck update check`, and what `rog-deck update apply` last left in
+  // updateStatePath. The apply runs detached: it reloads this plugin.
+  property var updateCheck: null
+  property var updateState: null
+  property bool updateChecking: false
+  // Seconds since the epoch, ticking once a minute for "checked 5 min ago".
+  property real now: Math.floor(Date.now() / 1000)
+  // Banners the user closed, by key, with the text they had; a new text shows again.
+  property var dismissed: ({})
 
   readonly property string activeProfile: String(pick("profile", status && status.profile ? status.profile.active || "" : ""))
   readonly property bool kbdIdleArmed: settingsLoaded && settings.kbdIdle.enabled && settings.kbdIdle.timeout > 0
@@ -330,6 +341,45 @@ Item {
     return true
   }
 
+  // Updates and banners --------------------------------------------------
+
+  function checkUpdates() {
+    if (updateProc.running) return
+    updateChecking = true
+    updateProc.running = true
+  }
+
+  function applyUpdate() {
+    if (updateState && updateState.state === "updating" && now - updateState.at < 300) return
+    updateState = { state: "updating", message: "", version: null, at: Math.floor(Date.now() / 1000) }
+    // Detached: the update rewrites this folder and the shell reloads the
+    // plugin, which would end a child process mid-merge.
+    Quickshell.execDetached([root.backend, "update", "apply"])
+    updateStateWatch.start()
+  }
+
+  // The banners over every tab, most urgent first.
+  readonly property var notices: {
+    var list = []
+    if (lastError) list.push({ key: "error", tone: "urgent", icon: "󰀦", text: lastError, dismissable: true })
+    var gpu = status ? status.gpu : null
+    var gpuNotice = Model.gpuNotice(gpu, gpu ? String(pick("gpu.next", gpu.next)) : "")
+    if (gpuNotice) list.push(gpuNotice)
+    var update = Model.updateNotice(updateCheck, updateState, status ? status.version : null, now)
+    if (update) list.push(update)
+    return list.filter(function(n) { return dismissed[n.key] !== n.text })
+  }
+
+  function dismissNotice(notice) {
+    if (notice.key === "error") {
+      lastError = ""
+      return
+    }
+    var next = Object.assign({}, dismissed)
+    next[notice.key] = notice.text
+    dismissed = next
+  }
+
   // Fans -----------------------------------------------------------------
 
   function setFanCustom(mode, on) {
@@ -431,6 +481,60 @@ Item {
     onFileChanged: reload()
   }
 
+  Process {
+    id: updateProc
+    command: [root.backend, "update", "check"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var data = Model.parseStatus(text)
+        if (data) root.updateCheck = data
+      }
+    }
+    onExited: root.updateChecking = false
+  }
+
+  FileView {
+    id: updateStateFile
+    path: root.updateStatePath
+    printErrors: false
+    onLoaded: {
+      var data = Model.parseStatus(text())
+      if (!data) return
+      // A click made since the file was written wins over the file.
+      if (root.updateState && root.updateState.at > data.at) return
+      root.updateState = data
+      if (data.state !== "updating") updateStateWatch.stop()
+    }
+  }
+
+  // The file may not exist until the update writes it, and a failed update
+  // doesn't reload the plugin, so read it again while one is running.
+  Timer {
+    id: updateStateWatch
+    interval: 2000
+    repeat: true
+    onTriggered: {
+      updateStateFile.reload()
+      if (!root.updateState || Date.now() / 1000 - root.updateState.at > 300) stop()
+    }
+  }
+
+  // First check a minute after login, then every six hours.
+  Timer {
+    interval: root.updateCheck ? 6 * 3600 * 1000 : 60 * 1000
+    running: root.settingsLoaded && root.settings.updates.autoCheck
+    repeat: true
+    onTriggered: root.checkUpdates()
+  }
+
+  Timer {
+    interval: 60 * 1000
+    running: true
+    repeat: true
+    onTriggered: root.now = Math.floor(Date.now() / 1000)
+  }
+
   Timer {
     id: themeReapply
     interval: 1500
@@ -439,7 +543,7 @@ Item {
 
   Timer {
     id: errorClear
-    interval: 8000
+    interval: 15000
     onTriggered: root.lastError = ""
   }
 
@@ -487,6 +591,13 @@ Item {
 
     function status(): string { return JSON.stringify(root.withActive()) }
     function refresh(): string { root.refresh(); return "ok" }
+    function version(): string { return root.status && root.status.version ? root.status.version : "unknown" }
+    function checkUpdates(): string { root.checkUpdates(); return "ok" }
+    function update(): string {
+      if (!root.updateCheck || !root.updateCheck.available) return "up to date"
+      root.applyUpdate()
+      return "updating"
+    }
     function profile(name: string): string { return root.setProfile(name) ? "ok" : "unknown" }
     function nextProfile(): string { root.stepProfile(1); return "ok" }
     function prevProfile(): string { root.stepProfile(-1); return "ok" }

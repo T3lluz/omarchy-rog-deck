@@ -1016,7 +1016,6 @@ def fans(args):
 # --------------------------------------------------------------- updates
 
 PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-UPDATE_STATE = os.path.join(STATE_HOME, "rog-deck", "update.json")
 
 
 def git(*args, timeout=10):
@@ -1035,92 +1034,13 @@ def manifest(ref=None):
     return data if isinstance(data, dict) else {}
 
 
-def update_check():
-    """Compare the installed copy with its git remote.
-
-    Fetching only writes inside .git, which the shell's plugin watcher
-    ignores, so a check never reloads the plugins.
-    """
-    result = {"current": manifest().get("version"), "latest": None, "available": False,
-              "managed": False, "dirty": False, "notes": [], "error": None, "checked": int(time.time())}
-    if not os.path.isdir(os.path.join(PLUGIN_DIR, ".git")) or not shutil.which("git"):
-        result["error"] = "Not installed from git, so it can't update itself"
-        return result
-    result["managed"] = True
-    result["dirty"] = bool((git("status", "--porcelain", "--untracked-files=no") or "").strip())
-    if git("fetch", "--quiet", "origin", "HEAD", timeout=30) is None:
-        result["error"] = "Couldn't reach the update server"
-        return result
-    head, fetched = git("rev-parse", "HEAD"), git("rev-parse", "FETCH_HEAD")
-    result["latest"] = manifest("FETCH_HEAD").get("version") or result["current"]
-    if head == fetched:
-        return result
-    if git("merge-base", "--is-ancestor", "HEAD", "FETCH_HEAD") is None:
-        # Local commits, as in a development checkout: leave it to git.
-        result["error"] = "This copy has commits of its own; update it with git"
-        return result
-    result["available"] = True
-    result["notes"] = [line for line in (git("log", "--format=%s", "HEAD..FETCH_HEAD") or "").splitlines() if line][:6]
-    return result
-
-
-def write_update_state(state, message="", version=None):
-    os.makedirs(os.path.dirname(UPDATE_STATE), exist_ok=True)
-    tmp = UPDATE_STATE + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump({"state": state, "message": message, "version": version, "at": int(time.time())}, f)
-    os.replace(tmp, UPDATE_STATE)
-
-
-def notify(summary, body=""):
-    if shutil.which("notify-send"):
-        run(["notify-send", "-a", "ROG Deck", "-i", "system-software-update", summary, body])
-
-
-def update_apply():
-    """Fast-forward to the remote and let the shell reload the plugin.
-
-    The panel starts this detached: the reload ends the panel's processes,
-    and the result is left in UPDATE_STATE for the reloaded panel to show.
-    """
-    write_update_state("updating", "Updating…")
-    before = manifest().get("version")
-    stashed = False
-    try:
-        if not os.path.isdir(os.path.join(PLUGIN_DIR, ".git")):
-            fail("not installed from git, so it can't update itself")
-        # omarchy plugin update refuses to fast-forward over local edits; keep
-        # them in a stash rather than lose them.
-        if (git("status", "--porcelain", "--untracked-files=no") or "").strip():
-            act(["git", "-C", PLUGIN_DIR, "stash", "push", "-m", "ROG Deck: local edits before updating from " + str(before)])
-            stashed = True
-        tool = shutil.which("omarchy-plugin-update")
-        if tool:
-            act([tool, manifest().get("id") or "io.github.t3lluz.rog-deck", "--yes"], timeout=180)
-        else:
-            act(["git", "-C", PLUGIN_DIR, "fetch", "--quiet", "origin", "HEAD"], timeout=60)
-            act(["git", "-C", PLUGIN_DIR, "merge", "--ff-only", "FETCH_HEAD"])
-            run(["omarchy-shell", "shell", "rescanPlugins"])
-    except Failure as error:
-        # act() says "<command> failed: <its last line>"; the last line is the news.
-        message = str(error).split(" failed: ", 1)[-1]
-        write_update_state("failed", message)
-        notify("ROG Deck couldn't update", message)
-        raise
-    after = manifest().get("version")
-    note = " Your local edits are kept in git stash." if stashed else ""
-    write_update_state("done", "Updated to %s.%s" % (after, note), after)
-    notify("ROG Deck updated to %s" % after, note.strip())
-    print(after)
-
-
 def update(args):
-    if args == ["check"]:
-        print(json.dumps(update_check(), separators=(",", ":")))
-    elif args == ["apply"]:
-        update_apply()
-    else:
+    """`rog-deck update check | apply`, kept for scripts: bin/plugin-update
+    does the work, the same updater Batteries and Server Dashboard ship."""
+    if args not in (["check"], ["apply"]):
         fail("update check | update apply")
+    script = os.path.join(PLUGIN_DIR, "bin", "plugin-update")
+    os.execv(sys.executable, [sys.executable, "-B", script, *args])
 
 
 # ------------------------------------------------------------------ main

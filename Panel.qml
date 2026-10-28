@@ -18,8 +18,15 @@ Panel {
   property bool cursorActive: false
   property int profileCursor: 0
   readonly property string gpuAsk: service ? service.gpuAsk : ""
-  // Before the panel is ready only an error is worth a banner.
-  readonly property var notices: service ? service.notices.filter(function(n) { return ready || n.key === "error" }) : []
+  // Before the panel is ready only an error is worth a banner, and a missing
+  // asusd is the one that explains the empty panel.
+  readonly property var notices: {
+    if (!service) return []
+    var list = service.notices.filter(function(n) { return ready || n.key === "error" })
+    if (status && !ready) list.unshift({ key: "asusd", tone: "urgent", icon: "󰀦",
+      text: "asusd is not running, so power modes, lighting and fans are out of reach. Start it with: sudo systemctl start asusd" })
+    return list
+  }
 
   readonly property var status: service ? service.status : null
   readonly property string activeProfile: service ? service.activeProfile : ""
@@ -37,8 +44,6 @@ Panel {
     }
     return stats
   }
-  // The mode icon moves in the bar unless turned off (System tab).
-  readonly property bool barAnimated: setting("barAnimate", true) === true
   readonly property bool barLive: barStats.length > 0 && !vertical
   readonly property var barParts: barLive ? Model.barParts(status && service ? service.withActive() : null, barStats) : []
   readonly property bool vertical: bar ? bar.vertical : false
@@ -183,13 +188,18 @@ Panel {
       anchors.centerIn: parent
       spacing: Style.space(6)
 
-      ModeIcon {
+      Item {
         anchors.verticalCenter: parent.verticalCenter
-        size: Style.bar.iconCanvas
-        mode: root.activeProfile
-        color: root.barForeground
-        accent: root.accent
-        animated: root.barAnimated
+        width: Style.bar.iconCanvas
+        height: Style.bar.iconCanvas
+
+        OpticalGlyph {
+          anchors.fill: parent
+          text: root.activeInfo.icon
+          fontFamily: button.fontFamily
+          fontSize: Style.bar.iconFont
+          color: root.barForeground
+        }
       }
 
       // One item per stat so the row spacing, not padding characters,
@@ -239,70 +249,36 @@ Panel {
         spacing: Style.space(14)
 
         // ---------- Hero: mode glyph · model · temperatures ----------
-        Item {
+        PanelHero {
           width: parent.width
-          implicitHeight: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight)
-
-          ModeIcon {
-            id: heroIcon
-            size: Style.font.display
-            mode: root.activeProfile
-            color: root.fg
-            accent: root.accent
-            animated: root.opened
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
+          title: root.status && root.status.model ? String(root.status.model).replace(/_.*$/, "") : "ROG Deck"
+          meta: {
+            if (!root.service || !root.status) return "Reading the laptop…"
+            if (!root.ready) return "asusd is not running"
+            return root.activeInfo.label + " mode · " + (root.status.ac ? "plugged in" : "on battery")
           }
-
-          Column {
-            id: heroLabels
-            anchors.left: heroIcon.right
-            anchors.leftMargin: Style.space(14)
-            anchors.right: heroTemps.left
-            anchors.rightMargin: Style.space(10)
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.space(2)
-
+          foreground: root.fg
+          fontFamily: root.fontFamily
+          iconComponent: Component {
             Text {
               textFormat: Text.PlainText
-              text: root.status && root.status.model ? String(root.status.model).replace(/_.*$/, "") : "ROG Deck"
+              text: root.activeInfo.icon
               color: root.fg
               font.family: root.fontFamily
-              font.pixelSize: Style.font.title
-              font.bold: true
-              elide: Text.ElideRight
-              width: parent.width
-            }
-
-            Text {
-              textFormat: Text.PlainText
-              text: {
-                if (!root.service || !root.status) return "READING THE LAPTOP…"
-                if (!root.ready) return "ASUSD IS NOT RUNNING"
-                return (root.activeInfo.label + " mode · " + (root.status.ac ? "plugged in" : "on battery")).toUpperCase()
-              }
-              color: root.ready || !root.status ? root.dim : root.urgent
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              font.bold: true
-              font.letterSpacing: 1.2
-              elide: Text.ElideRight
-              width: parent.width
+              font.pixelSize: Style.font.display
             }
           }
+          trailingControl: Component {
+            Row {
+              spacing: Style.space(14)
+              visible: root.ready
 
-          Row {
-            id: heroTemps
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.space(14)
-            visible: root.ready
-
-            TempReading { label: "CPU"; value: root.status && root.status.temps ? root.status.temps.cpu : null }
-            TempReading {
-              label: "GPU"
-              value: root.status && root.status.temps ? root.status.temps.gpu : null
-              visible: value !== null && value !== undefined
+              TempReading { label: "CPU"; value: root.status && root.status.temps ? root.status.temps.cpu : null }
+              TempReading {
+                label: "GPU"
+                value: root.status && root.status.temps ? root.status.temps.gpu : null
+                visible: value !== null && value !== undefined
+              }
             }
           }
         }
@@ -398,7 +374,7 @@ Panel {
             root.selectTab(dx)
           }
         } else if (dy !== 0) {
-          flick.contentY = Math.max(0, Math.min(flick.contentHeight - flick.height, flick.contentY - dy * 40))
+          flick.contentY = Math.max(0, Math.min(flick.contentHeight - flick.height, flick.contentY + dy * 40))
         }
       }
       onActivateRequested: {

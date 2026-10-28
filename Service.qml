@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Services.UPower
 import Quickshell.Wayland
 import "Model.js" as Model
+import "components"
 
 // Headless half of ROG Deck. It stays loaded whether or not the bar widget
 // is placed: it owns the one status poller every panel reads from, runs
@@ -24,7 +25,6 @@ Item {
   readonly property string configDir: (Quickshell.env("XDG_CONFIG_HOME") || home + "/.config") + "/rog-deck"
   readonly property string settingsPath: configDir + "/settings.json"
   readonly property string themeColourPath: home + "/.local/state/omarchy/current/theme/keyboard.rgb"
-  readonly property string updateStatePath: (Quickshell.env("XDG_STATE_HOME") || home + "/.local/state") + "/rog-deck/update.json"
 
   property var status: null
   property var fanCurves: null
@@ -46,13 +46,9 @@ Item {
   // GPU mode waiting on the panel's restart prompt, or "".
   property string gpuAsk: ""
 
-  // `rog-deck update check`, and what `rog-deck update apply` last left in
-  // updateStatePath. The apply runs detached: it reloads this plugin.
-  property var updateCheck: null
-  property var updateState: null
-  property bool updateChecking: false
-  // Seconds since the epoch, ticking once a minute for "checked 5 min ago".
-  property real now: Math.floor(Date.now() / 1000)
+  // Updates go through bin/plugin-update, the same as Batteries' and Server
+  // Dashboard's; the System tab's About section and the banner read it.
+  readonly property alias updater: updaterItem
   // Banners the user closed, by key, with the text they had; a new text shows again.
   property var dismissed: ({})
 
@@ -343,20 +339,8 @@ Item {
 
   // Updates and banners --------------------------------------------------
 
-  function checkUpdates() {
-    if (updateProc.running) return
-    updateChecking = true
-    updateProc.running = true
-  }
-
-  function applyUpdate() {
-    if (updateState && updateState.state === "updating" && now - updateState.at < 300) return
-    updateState = { state: "updating", message: "", version: null, at: Math.floor(Date.now() / 1000) }
-    // Detached: the update rewrites this folder and the shell reloads the
-    // plugin, which would end a child process mid-merge.
-    Quickshell.execDetached([root.backend, "update", "apply"])
-    updateStateWatch.start()
-  }
+  function checkUpdates() { updaterItem.checkNow() }
+  function applyUpdate() { updaterItem.apply() }
 
   // The banners over every tab, most urgent first.
   readonly property var notices: {
@@ -365,8 +349,7 @@ Item {
     var gpu = status ? status.gpu : null
     var gpuNotice = Model.gpuNotice(gpu, gpu ? String(pick("gpu.next", gpu.next)) : "")
     if (gpuNotice) list.push(gpuNotice)
-    var update = Model.updateNotice(updateCheck, updateState, status ? status.version : null, now)
-    if (update) list.push(update)
+    if (updaterItem.notice) list.push(updaterItem.notice)
     return list.filter(function(n) { return dismissed[n.key] !== n.text })
   }
 
@@ -481,58 +464,10 @@ Item {
     onFileChanged: reload()
   }
 
-  Process {
-    id: updateProc
-    command: [root.backend, "update", "check"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        var data = Model.parseStatus(text)
-        if (data) root.updateCheck = data
-      }
-    }
-    onExited: root.updateChecking = false
-  }
-
-  FileView {
-    id: updateStateFile
-    path: root.updateStatePath
-    printErrors: false
-    onLoaded: {
-      var data = Model.parseStatus(text())
-      if (!data) return
-      // A click made since the file was written wins over the file.
-      if (root.updateState && root.updateState.at > data.at) return
-      root.updateState = data
-      if (data.state !== "updating") updateStateWatch.stop()
-    }
-  }
-
-  // The file may not exist until the update writes it, and a failed update
-  // doesn't reload the plugin, so read it again while one is running.
-  Timer {
-    id: updateStateWatch
-    interval: 2000
-    repeat: true
-    onTriggered: {
-      updateStateFile.reload()
-      if (!root.updateState || Date.now() / 1000 - root.updateState.at > 300) stop()
-    }
-  }
-
-  // First check a minute after login, then every six hours.
-  Timer {
-    interval: root.updateCheck ? 6 * 3600 * 1000 : 60 * 1000
-    running: root.settingsLoaded && root.settings.updates.autoCheck
-    repeat: true
-    onTriggered: root.checkUpdates()
-  }
-
-  Timer {
-    interval: 60 * 1000
-    running: true
-    repeat: true
-    onTriggered: root.now = Math.floor(Date.now() / 1000)
+  Updater {
+    id: updaterItem
+    pluginDir: String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "").replace(/\/$/, "")
+    autoCheck: root.settingsLoaded && root.settings.updates.autoCheck
   }
 
   Timer {
@@ -594,7 +529,7 @@ Item {
     function version(): string { return root.status && root.status.version ? root.status.version : "unknown" }
     function checkUpdates(): string { root.checkUpdates(); return "ok" }
     function update(): string {
-      if (!root.updateCheck || !root.updateCheck.available) return "up to date"
+      if (!updaterItem.available) return "up to date"
       root.applyUpdate()
       return "updating"
     }

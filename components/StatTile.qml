@@ -3,7 +3,8 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 
-// A small reading card: icon and caption, a big value, an optional note.
+// Panel kit: a small reading card. Icon and caption, a big value, and a note
+// or a level bar underneath. Tiles sit three to a row.
 BorderSurface {
   id: tile
 
@@ -11,13 +12,21 @@ BorderSurface {
   property string caption: ""
   property string value: "—"
   property string note: ""
+  // A level bar in place of the note, when set.
+  property var level: null
+  property bool showLevel: false
   property color foreground: Commons.Color.foreground
+  property color accent: Commons.Color.accent
+  // Dimmed while it is the foreground; a colour of its own (the accent while
+  // charging) is shown as is.
+  property color iconColor: foreground
   property color valueColor: foreground
+  property color levelColor: foreground
   property string fontFamily: Style.font.family
 
   radius: Style.cornerRadius
   color: Qt.rgba(foreground.r, foreground.g, foreground.b, 0.04)
-  borderSpec: Border.controlSpec("normal", foreground, Commons.Color.accent)
+  borderSpec: Border.controlSpec("normal", foreground, accent)
   implicitHeight: content.implicitHeight + Style.space(18)
 
   Column {
@@ -30,22 +39,26 @@ BorderSurface {
     spacing: Style.space(2)
 
     Row {
+      width: parent.width
       spacing: Style.space(6)
 
-      Text {
-        textFormat: Text.PlainText
-        text: tile.icon
-        color: tile.foreground
-        opacity: 0.6
-        font.family: tile.fontFamily
-        font.pixelSize: Style.font.caption
+      Glyph {
+        anchors.verticalCenter: parent.verticalCenter
+        visible: tile.icon !== ""
+        icon: tile.icon
+        size: Style.font.caption
+        color: tile.iconColor
+        opacity: Qt.colorEqual(tile.iconColor, tile.foreground) ? 0.6 : 1
+        fontFamily: tile.fontFamily
       }
 
       Text {
+        anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: tile.caption
         color: tile.foreground
         opacity: 0.6
+        elide: Text.ElideRight
         font.family: tile.fontFamily
         font.pixelSize: Style.font.caption
         font.bold: true
@@ -66,15 +79,31 @@ BorderSurface {
     }
 
     // Always takes its line, so tiles in a row keep one height.
-    Text {
+    Item {
       width: parent.width
-      textFormat: Text.PlainText
-      text: tile.note || " "
-      color: tile.foreground
-      opacity: 0.55
-      elide: Text.ElideRight
-      font.family: tile.fontFamily
-      font.pixelSize: Style.font.caption
+      height: noteText.implicitHeight
+
+      Text {
+        id: noteText
+        visible: !tile.showLevel
+        width: parent.width
+        textFormat: Text.PlainText
+        text: tile.note || " "
+        color: tile.foreground
+        opacity: 0.55
+        elide: Text.ElideRight
+        font.family: tile.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+
+      LevelBar {
+        visible: tile.showLevel
+        anchors.verticalCenter: parent.verticalCenter
+        width: parent.width
+        level: tile.level || 0
+        fill: tile.levelColor
+        track: Qt.rgba(tile.foreground.r, tile.foreground.g, tile.foreground.b, 0.12)
+      }
     }
   }
 }

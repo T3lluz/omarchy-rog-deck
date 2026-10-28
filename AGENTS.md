@@ -6,20 +6,28 @@ How ROG Deck is put together, for anyone (or any agent) changing it. The user-fa
 
 - `Service.qml`: always loaded. Owns the status poller, the action queue to `bin/rog-deck`, `~/.config/rog-deck/settings.json`, the background jobs (keyboard auto-off, FN-lock after login, Auto refresh rate, theme re-apply) and the IPC target.
 - `Panel.qml`: the bar entry and panel, once per monitor, drawing the service's state. Bar picks come from `WidgetSettings.qml`.
-- `components/`: the tabs and controls. `ModeIcon.qml` is the animated Silent/Balanced/Turbo icon, `Notice.qml` the banners over every tab (built from `Service.notices`), `ToggleTile.qml` the half-width switch tiles for the bar picks.
+- `components/`: the tabs, the panel kit (below) and the shared updater. The mode icons are the Nerd Font glyphs Omarchy's own power menu uses, from `Model.PROFILES`.
 - `Model.js`: parsing and formatting, tested by `tests/model.test.js`.
-- `bin/rog-deck`: the backend (Python): asusd over D-Bus, power-profiles-daemon, sysfs, hyprctl, `nvidia-smi` only while the dGPU is awake.
+- `bin/rog-deck`: the backend (Python): asusd over D-Bus, power-profiles-daemon, sysfs, hyprctl, `nvidia-smi` only while the dGPU is awake. `rog-deck update` hands over to `bin/plugin-update`.
 - `docs/PLAN.md`: the original design notes.
 
 ## Test
 
 ```bash
 node tests/model.test.js
+node tests/update.test.js
+python3 -B -m unittest discover tests
 bin/rog-deck status | jq
 omarchy-shell io.github.t3lluz.rog-deck status | jq
 ```
 
-`ModeIcon.qml` runs one 50 ms clock, not a per-frame animation, so the bar on three monitors redraws a handful of times a second. Keep it that way.
+## Panel kit
+
+`SectionHeader`, `StatTile`, `ToggleTile`, `SwitchRow`, `Seg`, `Notice`, `LevelBar`, `OptionRow`, `Caption` and `UpdateSection` in `components/` are the panel kit: the same files, byte for byte, in ROG Deck, Batteries, Sonus and Server Dashboard, so the four look like one family. Change a kit file in all four or not at all. `Glyph.qml` is the one part each plugin owns: Nerd Font glyphs here, drawn Tabler icons in Batteries.
+
+`Updater.qml`, `Update.js` and `bin/plugin-update` are the shared updater (ROG Deck, Batteries and Server Dashboard; Sonus's engine updates itself the same way). It stashes local edits, untracked files too, before fast-forwarding, and drops the stash when the edits already are the update. `tests/update.test.js` and `tests/test_plugin_update.py` cover it.
+
+Panels never cut text: a `Notice` shows all of its message, a `Caption` breaks long words and paths, and a `ToggleTile` label that does not fit shows in full in its tooltip.
 
 ## Rules that are easy to break
 

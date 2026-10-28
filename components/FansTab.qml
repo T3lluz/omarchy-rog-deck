@@ -218,17 +218,13 @@ Column {
     }
   }
 
-  Text {
+  Caption {
     width: parent.width
     visible: !!tab.curveData
-    textFormat: Text.PlainText
-    wrapMode: Text.Wrap
     text: tab.custom ? "Drag a bar, or pick a point with the arrows and type exact values. Scroll a temperature to nudge it."
                      : "Turn on the custom curve to edit it."
-    color: tab.deck.fg
-    opacity: 0.55
-    font.family: tab.deck.fontFamily
-    font.pixelSize: Style.font.caption
+    foreground: tab.deck.fg
+    fontFamily: tab.deck.fontFamily
   }
 
   Text {

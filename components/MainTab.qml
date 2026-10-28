@@ -27,7 +27,7 @@ Column {
 
   // ---------- Power mode ----------
   SectionHeader {
-    icon: "󰓅"
+    icon: tab.deck.activeInfo.icon
     title: "POWER MODE"
     // What Omarchy puts back when the charger changes.
     detail: {
@@ -49,21 +49,10 @@ Column {
       model: tab.deck.profiles
 
       OptionRow {
-        id: profileRow
         required property var modelData
         required property int index
         width: parent.width
         icon: modelData.icon
-        // The current mode moves, and any other while the pointer is on it.
-        iconComponent: Component {
-          ModeIcon {
-            size: Style.font.title
-            mode: profileRow.modelData.key
-            color: profileRow.foreground
-            accent: Commons.Color.accent
-            animated: tab.deck.opened && (profileRow.current || profileRow.hasCursor)
-          }
-        }
         title: modelData.label
         subtitle: modelData.hint
         current: tab.deck.activeProfile === modelData.key

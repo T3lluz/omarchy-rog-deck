@@ -3,15 +3,16 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 
-// Section title in Omarchy's panel style (bold small caps, dimmed) with an
-// icon in front and, on the right, either a value or a switch for the whole
-// section.
+// Panel kit: a section title in Omarchy's panel style (bold small caps,
+// dimmed) with an icon in front and, on the right, a reading or a switch for
+// the whole section.
 Item {
   id: header
 
   property string icon: ""
   property string title: ""
   property string detail: ""
+  property color detailColor: Qt.darker(foreground, 1.15)
   property bool showSwitch: false
   property bool checked: false
   property color foreground: Commons.Color.foreground
@@ -23,24 +24,26 @@ Item {
   width: parent ? parent.width : implicitWidth
   implicitHeight: Math.max(titleText.implicitHeight, toggle.visible ? toggle.implicitHeight : 0, detailText.implicitHeight)
 
-  Text {
-    id: iconText
+  Glyph {
+    id: iconBox
     anchors.left: parent.left
     anchors.verticalCenter: parent.verticalCenter
     visible: header.icon !== ""
     width: visible ? Style.space(20) : 0
-    textFormat: Text.PlainText
-    text: header.icon
+    icon: header.icon
+    size: Style.font.body
     color: Qt.darker(header.foreground, 1.4)
-    font.family: header.fontFamily
-    font.pixelSize: Style.font.body
+    fontFamily: header.fontFamily
   }
 
   PanelSectionHeader {
     id: titleText
-    anchors.left: iconText.right
-    anchors.leftMargin: iconText.visible ? Style.space(4) : 0
+    anchors.left: iconBox.right
+    anchors.leftMargin: iconBox.visible ? Style.space(4) : 0
+    anchors.right: toggle.visible ? toggle.left : detailText.left
+    anchors.rightMargin: Style.space(8)
     anchors.verticalCenter: parent.verticalCenter
+    elide: Text.ElideRight
     text: header.title
     foreground: header.foreground
     fontFamily: header.fontFamily
@@ -51,9 +54,12 @@ Item {
     anchors.right: parent.right
     anchors.verticalCenter: parent.verticalCenter
     visible: !header.showSwitch && header.detail !== ""
+    width: visible ? Math.min(implicitWidth, header.width * 0.6) : 0
     textFormat: Text.PlainText
     text: header.detail
-    color: Qt.darker(header.foreground, 1.15)
+    horizontalAlignment: Text.AlignRight
+    elide: Text.ElideRight
+    color: header.detailColor
     font.family: header.fontFamily
     font.pixelSize: Style.font.caption
     font.bold: true

@@ -19,9 +19,7 @@ Column {
   readonly property var gpu: status && status.gpu ? status.gpu : null
   readonly property string gpuNext: gpu && service ? String(service.pick("gpu.next", gpu.next)) : ""
   readonly property bool gpuPending: !!gpu && gpuNext !== gpu.mode
-  readonly property bool updateBusy: !!service && (service.updateChecking
-    || (!!service.updateState && service.updateState.state === "updating" && service.now - service.updateState.at < 300))
-  readonly property bool updateAvailable: !!service && !!service.updateCheck && service.updateCheck.available === true
+  readonly property var updater: service ? service.updater : null
 
   function armouryOn(name) {
     var attr = armoury[name]
@@ -31,7 +29,7 @@ Column {
   spacing: Style.space(12)
 
   // Have an answer ready the first time the tab is opened.
-  onVisibleChanged: if (visible && service && !service.updateCheck && !service.updateChecking) service.checkUpdates()
+  onVisibleChanged: if (visible && updater && !updater.check && !updater.checking) updater.checkNow()
 
   // ---------- Battery ----------
   SectionHeader {
@@ -66,20 +64,16 @@ Column {
       width: parent.width
       height: Math.max(onceButton.visible ? onceButton.implicitHeight : 0, onceText.implicitHeight)
 
-      Text {
+      Caption {
         id: onceText
         anchors.left: parent.left
         anchors.right: onceButton.visible ? onceButton.left : parent.right
         anchors.rightMargin: Style.space(10)
         anchors.verticalCenter: parent.verticalCenter
-        textFormat: Text.PlainText
-        wrapMode: Text.Wrap
         text: tab.limit < 100 ? "Holding below full spares the battery. About 80% suits a laptop that stays plugged in."
                               : "Charges to full every time."
-        color: tab.deck.fg
-        opacity: 0.55
-        font.family: tab.deck.fontFamily
-        font.pixelSize: Style.font.caption
+        foreground: tab.deck.fg
+        fontFamily: tab.deck.fontFamily
       }
 
       Button {
@@ -193,11 +187,9 @@ Column {
     onPicked: function(v) { tab.deck.askGpuMode(v) }
   }
 
-  Text {
+  Caption {
     width: parent.width
     visible: !!tab.gpu
-    textFormat: Text.PlainText
-    wrapMode: Text.Wrap
     text: {
       if (!tab.gpu) return ""
       if (tab.gpuPending) return "Starts in " + Model.gpuModeInfo(tab.gpuNext).label + " mode after the next restart. Pick " + Model.gpuModeInfo(tab.gpu.mode).label + " to cancel."
@@ -206,10 +198,8 @@ Column {
         line += " Integrated installs supergfxctl the first time, which asks for your password."
       return line
     }
-    color: tab.deck.fg
-    opacity: 0.55
-    font.family: tab.deck.fontFamily
-    font.pixelSize: Style.font.caption
+    foreground: tab.deck.fg
+    fontFamily: tab.deck.fontFamily
   }
 
   PanelSeparator { foreground: tab.deck.fg }
@@ -251,98 +241,26 @@ Column {
     }
   }
 
-  SwitchRow {
-    width: parent.width
-    icon: "󰐊"
-    label: "Animate the mode icon"
-    hint: "Turbo flickers, Balanced idles, Silent sways"
-    checked: tab.deck.barAnimated
-    foreground: tab.deck.fg
-    fontFamily: tab.deck.fontFamily
-    onToggled: tab.deck.setBarStat("barAnimate", !tab.deck.barAnimated)
-  }
-
   PanelSeparator { foreground: tab.deck.fg }
 
   // ---------- About and updates ----------
-  SectionHeader {
+  UpdateSection {
     icon: "󰚰"
-    title: "ROG DECK"
-    detail: tab.status && tab.status.version ? "V" + tab.status.version : ""
+    name: "ROG Deck"
+    version: tab.updater ? tab.updater.version : ""
+    line: tab.updater ? tab.updater.line : ""
+    available: !!tab.updater && tab.updater.available
+    checking: !!tab.updater && tab.updater.checking
+    busy: !!tab.updater && tab.updater.busy
+    managed: !tab.updater || tab.updater.managed
+    notes: tab.updater ? tab.updater.notes : []
+    showAutoCheck: true
+    autoCheck: tab.service ? tab.service.settings.updates.autoCheck : true
     foreground: tab.deck.fg
+    accent: tab.deck.accent
     fontFamily: tab.deck.fontFamily
-  }
-
-  Item {
-    width: parent.width
-    height: Math.max(updateButton.implicitHeight, updateText.implicitHeight)
-
-    Text {
-      id: updateText
-      anchors.left: parent.left
-      anchors.right: updateButton.left
-      anchors.rightMargin: Style.space(10)
-      anchors.verticalCenter: parent.verticalCenter
-      textFormat: Text.PlainText
-      wrapMode: Text.Wrap
-      text: tab.service ? (tab.service.updateChecking ? "Checking…" : Model.updateLine(tab.service.updateCheck, tab.service.updateState, tab.service.now)) : ""
-      color: tab.deck.fg
-      opacity: tab.updateAvailable ? 1 : 0.55
-      font.family: tab.deck.fontFamily
-      font.pixelSize: Style.font.caption
-    }
-
-    Button {
-      id: updateButton
-      anchors.right: parent.right
-      anchors.verticalCenter: parent.verticalCenter
-      text: tab.updateAvailable ? "Update" : "Check now"
-      iconText: tab.updateAvailable ? "󰇚" : "󰑓"
-      iconSpinning: !!tab.service && tab.service.updateChecking
-      tooltipText: tab.updateAvailable ? "Download and reload ROG Deck. Your settings are kept" : "Look for a newer ROG Deck"
-      fontSize: Style.font.bodySmall
-      foreground: tab.deck.fg
-      fontFamily: tab.deck.fontFamily
-      bordered: true
-      opacity: tab.updateBusy ? 0.45 : 1
-      onClicked: {
-        if (tab.updateBusy) return
-        if (tab.updateAvailable) tab.service.applyUpdate()
-        else tab.service.checkUpdates()
-      }
-    }
-  }
-
-  Column {
-    width: parent.width
-    spacing: Style.space(2)
-    visible: tab.updateAvailable && tab.service.updateCheck.notes.length > 0
-
-    Repeater {
-      model: tab.updateAvailable ? tab.service.updateCheck.notes : []
-
-      Text {
-        required property string modelData
-        width: parent.width
-        textFormat: Text.PlainText
-        elide: Text.ElideRight
-        text: "· " + modelData
-        color: tab.deck.fg
-        opacity: 0.7
-        font.family: tab.deck.fontFamily
-        font.pixelSize: Style.font.caption
-      }
-    }
-  }
-
-  SwitchRow {
-    width: parent.width
-    icon: "󰔟"
-    label: "Check for updates automatically"
-    hint: "Looks on GitHub every few hours; updating is always your click"
-    checked: tab.service ? tab.service.settings.updates.autoCheck : true
-    foreground: tab.deck.fg
-    fontFamily: tab.deck.fontFamily
-    onToggled: tab.service.saveSetting(["updates", "autoCheck"], !tab.service.settings.updates.autoCheck)
+    onCheckRequested: tab.updater.checkNow()
+    onApplyRequested: tab.updater.apply()
+    onAutoCheckToggled: tab.service.saveSetting(["updates", "autoCheck"], !tab.service.settings.updates.autoCheck)
   }
 }

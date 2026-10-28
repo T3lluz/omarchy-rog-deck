@@ -3,8 +3,9 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 
-// Equal-width row of options, pick one. `options` is [{ value, label,
-// icon?, hint? }]; `picked(value)` fires only for a different option.
+// Panel kit: an equal-width row of options, pick one. `options` is
+// [{ value, label, icon?, hint? }], the icon a Nerd Font glyph (qs.Ui
+// Button draws it); `picked(value)` fires only for a different option.
 Row {
   id: seg
 
@@ -18,6 +19,7 @@ Row {
 
   signal picked(var value)
 
+  width: parent ? parent.width : implicitWidth
   spacing: Style.space(6)
 
   readonly property real cellWidth: options.length > 0

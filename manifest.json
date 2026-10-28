@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.t3lluz.rog-deck",
   "name": "ROG Deck",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "author": "fredde",
   "license": "MIT",
   "homepage": "https://github.com/T3lluz/omarchy-rog-deck",
@@ -40,8 +40,7 @@
       "barPower": false,
       "barDgpu": false,
       "barBattery": false,
-      "barRefresh": false,
-      "barAnimate": true
+      "barRefresh": false
     },
     "schema": [
       {
@@ -95,13 +94,6 @@
         "label": "Show the screen refresh rate in the bar",
         "description": "Turn every bar stat off to show only the power mode icon. You can also pick these in the panel's System tab.",
         "defaultValue": false
-      },
-      {
-        "key": "barAnimate",
-        "type": "boolean",
-        "label": "Animate the power mode icon",
-        "description": "Turbo flickers, Balanced idles, Silent sways. Off keeps the icon still.",
-        "defaultValue": true
       }
     ]
   }

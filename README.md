@@ -4,7 +4,7 @@
   <p>An Omarchy bar widget and control panel for <b>ASUS ROG</b> laptops, built on <a href="https://asus-linux.org/">asusctl/asusd</a>:<br/>
   power modes, temperatures and fans, keyboard lighting with auto-off, AniMe Matrix, FN-lock, battery limit, display and GPU mode.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v0.6.0-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v0.7.0-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-ff8f6b" />
     <img alt="asusd 6" src="https://img.shields.io/badge/asusd-6-ff8f6b" />
     <a href="https://github.com/T3lluz/omarchy-rog-deck/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-rog-deck/actions/workflows/ci.yml/badge.svg" /></a>
@@ -16,12 +16,10 @@
 
 ## Features
 
-<img src="assets/modes.gif" width="300" align="right" alt="Silent sways, Balanced idles, Turbo flickers" />
-
-- **The power mode, animated in the bar:** Silent is a leaf that sways, Balanced a gauge whose needle idles, Turbo a flame that flickers over an ember in your theme's accent. Drawn, not typed, at about 20 frames a second so three monitors stay cheap; turn it off in System.
+- **The power mode in the bar:** the leaf, gauge and speedometer Omarchy's own power menu shows for Silent, Balanced and Turbo.
 - **Scroll the icon** to switch modes, middle-click it for the keyboard light, hover it for temperatures, fans and battery.
 - **Pick the bar stats** from a grid of switches in the System tab: the mode name, CPU and GPU temperature (tinted as they heat up), fan speed, package power, the NVIDIA GPU's state or draw, battery and refresh rate. None picked leaves the icon alone. The GPU temperature appears only while the dGPU is awake.
-- **Updates itself:** the System tab checks the plugin's GitHub every few hours and updates in place when you click Update. Local edits in the plugin folder are kept in `git stash` rather than blocking the update.
+- **Updates itself:** the System tab checks the plugin's GitHub every few hours and updates in place when you click Update. Local edits in the plugin folder, new files included, are kept in `git stash` rather than blocking the update, and dropped when they already are the new version.
 - **Banners over every tab** for what needs you: an error, a GPU switch waiting on a restart, or a new version.
 - **Every monitor agrees:** one service owns the state, and the bar settings are read straight from `shell.json`, so a pick made on one screen shows on all of them and survives a restart.
 - Tabs appear only for hardware your laptop has.
@@ -91,7 +89,7 @@ o.bind("XF86Launch4", "Next power mode", "omarchy-shell io.github.t3lluz.rog-dec
 
 - `bin/rog-deck` is the backend. `rog-deck status` returns everything as one JSON object in about 0.2 s, read from asusd's D-Bus API, power-profiles-daemon, sysfs and hyprctl. Every change is one `rog-deck` command; `bin/rog-deck --help` lists them.
 - `Service.qml` holds the state, the settings file and the background jobs, and owns the IPC target.
-- `Panel.qml` and `components/` draw the bar icon and panel; `components/ModeIcon.qml` is the animated mode icon.
+- `Panel.qml` and `components/` draw the bar icon and panel, with the panel kit shared by all four plugins in this family.
 - `Model.js` holds the pure logic, tested under node.
 
 Details that matter:
@@ -100,12 +98,14 @@ Details that matter:
 - **Refresh rate.** Hyprland 0.56's Lua config rejects `hyprctl keyword monitor`, so the rate goes through `hyprctl eval "hl.monitor({...})"`. If hyprmoncfg's daemon has an active profile, that profile is saved too, so the change sticks.
 - **GPU readings.** `nvidia-smi` is only asked while the dGPU is already awake.
 - **GPU modes.** The running mode comes from the hardware: no NVIDIA card (or one parked on vfio-pci) is Integrated, an NVIDIA card driving the eDP panel is Dedicated. asusd queues `gpu_mux_mode` writes (`QueuedGpuValue`) for its `asus-shutdown` helper, so the mode after restart is read from that queue plus supergfxd's config. A queued `dgpu_disable=1` from an earlier version is cancelled. The restart is `omarchy-system-reboot`.
-- **Updates.** `rog-deck update check` fetches the plugin's remote (only `.git` changes, which the shell ignores) and compares versions; `rog-deck update apply` runs detached, stashes local edits, and calls `omarchy plugin update`, which fast-forwards, validates and reloads the plugins. The result lands in `~/.local/state/rog-deck/update.json` for the reloaded panel.
+- **Updates.** `bin/plugin-update check` (or `rog-deck update check`) fetches the plugin's remote (only `.git` changes, which the shell ignores) and compares versions; `apply` runs detached, stashes local edits with untracked files, and calls `omarchy plugin update`, which fast-forwards, validates and reloads the plugins. The result lands in `~/.local/state/rog-deck/update.json` for the reloaded panel.
 
 ## Development
 
 ```bash
 node tests/model.test.js
+node tests/update.test.js
+python3 -B -m unittest discover tests
 bin/rog-deck status | jq
 omarchy plugin validate .
 omarchy restart shell    # pick up QML changes
@@ -118,7 +118,6 @@ See [AGENTS.md](AGENTS.md) for how the pieces fit. [docs/PLAN.md](docs/PLAN.md) 
 - [Power-Deck](https://github.com/T3lluz/Power-Deck), the KDE Plasma original: AniMe, fan curve and keyboard-idle behaviour, the bar-style curve editor.
 - [omarchy-asus](https://github.com/moneytosms/omarchy-asus) by moneytosms: hardware-gated tabs, every tab built up front, and the Hyprland 0.56 refresh-rate path.
 - [g-helper-linux](https://github.com/utajum/g-helper-linux) and [G-Helper](https://github.com/seerge/g-helper): feature reference, and the evidence that Eco/Integrated has to happen before the display stack holds the dGPU.
-- [Tabler Icons](https://tabler.io/icons) (MIT): the leaf, gauge and flame outlines the mode icon animates.
 
 ## License
 

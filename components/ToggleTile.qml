@@ -3,8 +3,9 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 
-// A half-width on/off tile: icon, label and a switch, the whole tile one
-// click target. Filled while on. Two of these sit side by side.
+// Panel kit: a half-width on/off tile for the bar picks. Icon, label and a
+// switch, the whole tile one click target, filled while on. Two sit side by
+// side under a "Show in the bar" header.
 CursorSurface {
   id: tile
 
@@ -21,24 +22,22 @@ CursorSurface {
   bordered: true
   implicitHeight: Math.max(labelText.implicitHeight, toggle.implicitHeight) + Style.space(16)
 
-  Text {
-    id: iconText
+  Glyph {
+    id: iconBox
     anchors.left: parent.left
     anchors.leftMargin: Style.space(8)
     anchors.verticalCenter: parent.verticalCenter
     width: Style.space(20)
-    horizontalAlignment: Text.AlignHCenter
-    textFormat: Text.PlainText
-    text: tile.icon
+    icon: tile.icon
+    size: Style.font.body
     color: tile.foreground
     opacity: tile.checked ? 1 : 0.6
-    font.family: tile.fontFamily
-    font.pixelSize: Style.font.body
+    fontFamily: tile.fontFamily
   }
 
   Text {
     id: labelText
-    anchors.left: iconText.right
+    anchors.left: iconBox.right
     anchors.leftMargin: Style.space(8)
     anchors.right: toggle.left
     anchors.rightMargin: Style.space(6)
@@ -72,9 +71,10 @@ CursorSurface {
     onClicked: tile.toggled()
   }
 
+  // A label cut short in the half-width tile shows in full here.
   PanelToolTip {
-    visible: mouse.containsMouse && tile.hint !== ""
-    text: tile.hint
+    visible: mouse.containsMouse && text !== ""
+    text: labelText.truncated ? tile.label + (tile.hint !== "" ? " · " + tile.hint : "") : tile.hint
     fontFamily: tile.fontFamily
   }
 }

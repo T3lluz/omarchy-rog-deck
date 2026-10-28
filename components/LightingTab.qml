@@ -64,17 +64,13 @@ Column {
     onToggled: tab.service.setKbdIdle("enabled", !tab.idle.enabled)
   }
 
-  Text {
+  Caption {
     width: parent.width
-    textFormat: Text.PlainText
-    wrapMode: Text.Wrap
     text: tab.idle.enabled
       ? "Goes dark after " + Model.formatSeconds(tab.idle.timeout) + " without typing or touchpad, back on the next key press."
       : "The keyboard light stays as you set it."
-    color: tab.deck.fg
-    opacity: 0.55
-    font.family: tab.deck.fontFamily
-    font.pixelSize: Style.font.caption
+    foreground: tab.deck.fg
+    fontFamily: tab.deck.fontFamily
   }
 
   Column {

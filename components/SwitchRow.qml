@@ -3,8 +3,9 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 
-// One row: an icon, a label (and optional hint), and a switch at the end.
-// Lighter than qs.Ui Toggle, so a section can stack several.
+// Panel kit: one row with an icon, a label (and an optional hint) and a
+// switch at the end. Lighter than qs.Ui Toggle, so a section can stack
+// several.
 Item {
   id: row
 
@@ -20,29 +21,28 @@ Item {
 
   signal toggled()
 
+  width: parent ? parent.width : implicitWidth
   implicitHeight: Math.max(toggle.implicitHeight, labels.implicitHeight)
   opacity: interactive ? 1 : 0.45
 
-  Text {
-    id: iconText
+  Glyph {
+    id: iconBox
     anchors.left: parent.left
     anchors.leftMargin: visible ? Style.space(8) : 0
     anchors.verticalCenter: parent.verticalCenter
     visible: row.icon !== ""
     width: visible ? Style.space(22) : 0
-    horizontalAlignment: Text.AlignHCenter
-    textFormat: Text.PlainText
-    text: row.icon
+    icon: row.icon
+    size: Style.font.title
     color: row.foreground
     opacity: row.checked ? 1 : 0.6
-    font.family: row.fontFamily
-    font.pixelSize: Style.font.title
+    fontFamily: row.fontFamily
   }
 
   Column {
     id: labels
-    anchors.left: iconText.right
-    anchors.leftMargin: iconText.visible ? Style.space(10) : 0
+    anchors.left: iconBox.right
+    anchors.leftMargin: iconBox.visible ? Style.space(10) : 0
     anchors.right: toggle.left
     anchors.rightMargin: Style.space(10)
     anchors.verticalCenter: parent.verticalCenter

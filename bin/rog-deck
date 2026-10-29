@@ -32,10 +32,10 @@ writing /etc/supergfxd.conf), and installing the power helper
   rog-deck fnlock on|off
 
   rog-deck power                           JSON: CPU limit support, ranges, what is applied
-  rog-deck power limit <watts>             cap the CPU: sustained <watts>, boosts raised to the firmware minimum
+  rog-deck power limit <watts>             cap the CPU in Silent: sustained <watts>, boosts raised to the firmware minimum
   rog-deck power off                       hand the CPU limits back to the firmware
   rog-deck power setup | uninstall         install or remove the root helper and its polkit rule
-  rog-deck saver screen on|off             power-profiles-daemon's panel power saving (battery only)
+  rog-deck saver screen <0-4>              panel power savings level (0 off)
   rog-deck saver wifi on|off               Wi-Fi power save
 
   rog-deck gpu                             JSON: running mode, mode after restart, choices
@@ -121,6 +121,9 @@ fi
 POWER_HELPER = "/usr/local/libexec/rog-deck-power"
 POWER_RULE = "/etc/polkit-1/rules.d/49-rog-deck-power.rules"
 POWER_STATE = "/run/rog-deck-power.json"
+# Whether `power limit` switched Silent's custom fan curve on, so `power off`
+# switches it back off. A curve the user turned on stays theirs.
+POWER_OWNER = os.path.join(STATE_HOME, "rog-deck", "power.json")
 # Run as root through pkexec; $1 is the helper to install, $2 the user the
 # polkit rule lets run it without a password. The helper is copied, never
 # run from the plugin folder: that folder is the user's to write, and a rule
@@ -879,15 +882,18 @@ def power_status():
         # The slider covers the battery range: past 35 W sustained Silent stops being silent.
         "slider": list(table["dc"]["spl"]) if table else None,
         "applied": applied if isinstance(applied, dict) and "spl" in applied else None,
+        "curveOwned": curve_owned(),
     }
 
 
 def screen_saving(ppd):
-    """power-profiles-daemon's panel power savings: on in power-saver and balanced on battery."""
+    """amdgpu's panel power savings level, and whether power-profiles-daemon
+    also drives it (its action only acts below 50% battery, so Battery saver
+    switches it off and sets the level itself)."""
     info = next((a for a in ppd.get("ActionsInfo") or [] if a.get("Name") == "amdgpu_panel_power"), None)
     level = next((v for v in (read_int(p) for p in glob.glob("/sys/class/drm/card*-eDP-*/amdgpu/panel_power_savings"))
                   if v is not None), None)
-    return {"available": info is not None, "enabled": bool(info and info.get("Enabled")), "level": level}
+    return {"available": level is not None, "level": level, "ppd": bool(info and info.get("Enabled"))}
 
 
 def wifi_interfaces():
@@ -936,6 +942,38 @@ def power_helper(*args):
         fail(detail[-1].replace("rog-deck-power: ", "") if detail else "power helper exit %d" % out.returncode)
 
 
+def silent_curve(on=None):
+    """Whether Silent runs its custom fan curve; with `on`, switch it.
+
+    This firmware ignores the CPU limits unless the mode runs a custom fan
+    curve (the kernel's table marks the GA402X the same way). asusd keeps a
+    copy of the firmware curve as each mode's custom one until it is edited,
+    so switching it on keeps the fans as they were.
+    """
+    profile_id = fan_profile_id("power-saver")
+    if on is None:
+        return any(fan["enabled"] for fan in fan_data(profile_id).values())
+    call(ROOT, "xyz.ljones.FanCurves", "SetFanCurvesEnabled", "ub", profile_id, "true" if on else "false")
+
+
+def curve_owned(value=None):
+    if value is None:
+        try:
+            with open(POWER_OWNER) as f:
+                return bool(json.load(f).get("curve"))
+        except (OSError, ValueError, AttributeError):
+            return False
+    if value:
+        os.makedirs(os.path.dirname(POWER_OWNER), exist_ok=True)
+        with open(POWER_OWNER, "w") as f:
+            json.dump({"curve": True}, f)
+    else:
+        try:
+            os.remove(POWER_OWNER)
+        except FileNotFoundError:
+            pass
+
+
 def power(args):
     if not args:
         print(json.dumps(power_status(), separators=(",", ":")))
@@ -947,9 +985,17 @@ def power(args):
         low, high = info["slider"]
         if not low <= watts <= high:
             fail("limit must be %d-%d W" % (low, high))
+        if not silent_curve():
+            silent_curve(True)
+            curve_owned(True)
+            # G-Helper waits the same before writing limits after fans.
+            time.sleep(0.5)
         power_helper("ppt", *map(str, ppt_triple(watts, power_module().limits())))
     elif args == ["off"]:
         power_helper("reset")
+        if curve_owned():
+            silent_curve(False)
+            curve_owned(False)
     elif args == ["setup"]:
         root_script(POWER_SETUP_SCRIPT, [os.path.join(PLUGIN_DIR, "bin", "rog-deck-power"),
                                          pwd.getpwuid(os.getuid()).pw_name], "power helper setup")
@@ -960,13 +1006,15 @@ def power(args):
 
 
 def saver(args):
-    if len(args) != 2 or args[0] not in ("screen", "wifi") or args[1] not in ("on", "off"):
-        fail("saver screen on|off | saver wifi on|off")
-    if args[0] == "screen":
-        act(["powerprofilesctl", "configure-action", "amdgpu_panel_power",
-             "--enable" if args[1] == "on" else "--disable"])
-    else:
+    if len(args) == 2 and args[0] == "screen" and args[1] in "01234" and len(args[1]) == 1:
+        # Two writers would undo each other, so power-profiles-daemon's action goes off first.
+        if screen_saving(ppd_props())["ppd"]:
+            act(["powerprofilesctl", "configure-action", "amdgpu_panel_power", "--disable"])
+        power_helper("panel-power", args[1])
+    elif len(args) == 2 and args[0] == "wifi" and args[1] in ("on", "off"):
         power_helper("wifi-powersave", args[1])
+    else:
+        fail("saver screen <0-4> | saver wifi on|off")
 
 
 # ------------------------------------------------------------------- gpu

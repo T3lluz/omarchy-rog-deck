@@ -80,7 +80,7 @@ Column {
       label: "CPU power limit"
       hint: {
         if (!tab.limit.enabled) return "Hold Silent under the firmware's own limit" + (tab.power && tab.power.helper !== "ok" ? ". Asks for your password once" : "")
-        return Model.limitCaption(tab.limitTriple)
+        return Model.limitCaption(tab.limitTriple) + ". Runs Silent's custom fan curve, which the firmware needs for limits"
       }
       checked: tab.limit.enabled
       foreground: tab.deck.fg

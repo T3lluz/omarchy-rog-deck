@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, gpuModes, gpuModeInfo, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, formatSeconds, barParts, BAR_STATS, PROFILES, gpuConfirmText, gpuNotice, saverOverdrive, pptTriple, powerLimitWatts, limitCaption, limitApplied, batteryGpuNotice, powerHelperNotice }")()
+const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, gpuModes, gpuModeInfo, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, formatSeconds, barParts, BAR_STATS, PROFILES, gpuConfirmText, gpuNotice, saverOverdrive, pptTriple, powerLimitWatts, limitCaption, limitApplied, batteryGpuNotice, powerHelperNotice, screenLevel }")()
 
 // Trimmed from a real `bin/rog-deck status` on a GA402NV.
 const status = {
@@ -195,6 +195,10 @@ assert.strictEqual(saved.saver.overdriveAc, 1)
 assert.strictEqual(saved.saver.screen, true)
 assert.deepStrictEqual(saved.powerLimit, { enabled: true, watts: 20 })
 assert.deepStrictEqual(Model.mergeSettings('{"powerLimit":{"watts":"lots"}}').powerLimit, { enabled: false, watts: 15 })
+
+assert.strictEqual(Model.screenLevel(true, { screen: true }), 3)
+assert.strictEqual(Model.screenLevel(true, { screen: false }), 0)
+assert.strictEqual(Model.screenLevel(false, { screen: true }), 0)
 
 // CPU limit: the GA402NV's ranges on battery and on the charger
 const dc = { spl: [15, 35], sppt: [25, 35], fppt: [35, 65] }

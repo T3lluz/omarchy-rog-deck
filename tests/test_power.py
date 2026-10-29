@@ -55,7 +55,8 @@ class HelperChecks(unittest.TestCase):
                 helper.parse_watts(bad)
 
     def test_unknown_commands_fail(self):
-        for argv in ([], ["ppt", "15"], ["wifi-powersave", "maybe"], ["write", "/etc/passwd"]):
+        for argv in ([], ["ppt", "15"], ["wifi-powersave", "maybe"], ["write", "/etc/passwd"],
+                     ["panel-power"], ["panel-power", "5"], ["panel-power", "-1"], ["panel-power", "1", "2"]):
             with self.assertRaises(helper.Failure, msg=argv):
                 helper.main(argv)
 

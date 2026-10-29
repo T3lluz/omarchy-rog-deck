@@ -148,14 +148,16 @@ Column {
   SwitchRow {
     width: parent.width
     visible: !!tab.screenSaving && tab.screenSaving.available
+    interactive: tab.saver.enabled
     icon: "󰃞"
     label: "Screen power saving"
     hint: {
       var s = tab.screenSaving
+      if (!tab.saver.enabled) return "Part of Battery saver"
       if (s && s.level > 0) return "Saving now (level " + s.level + "): less backlight power, less accurate colours"
-      return "Less backlight power on battery, less accurate colours"
+      return "On battery: less backlight power, less accurate colours"
     }
-    checked: tab.screenSaving && tab.service ? !!tab.service.pick("saver.screen", tab.screenSaving.enabled) : false
+    checked: tab.saver.enabled && tab.saver.screen
     foreground: tab.deck.fg
     fontFamily: tab.deck.fontFamily
     onToggled: tab.service.setScreenSaving(!checked)

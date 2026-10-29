@@ -308,6 +308,14 @@ function saverOverdrive(active, current, remembered) {
   return remembered === 1 && current === 0 ? { set: 1 } : { set: null }
 }
 
+// The panel power savings level Battery saver holds: amdgpu's 0 (off) to 4.
+// 3 is the strongest power-profiles-daemon itself uses in power-saver.
+var SCREEN_SAVING_LEVEL = 3
+
+function screenLevel(active, saver) {
+  return active && saver && saver.screen ? SCREEN_SAVING_LEVEL : 0
+}
+
 // Sustained at `watts`; the boosts follow it but never drop below their
 // firmware minimum. bin/rog-deck's ppt_triple does the same when applying.
 function pptTriple(watts, ranges) {

@@ -11,6 +11,7 @@ the firmware's limits for this exact laptop and power source.
   rog-deck-power ppt <spl> <sppt> <fppt>   CPU limits in watts: sustained, slow and fast boost
   rog-deck-power reset                     hand the CPU limits back to the firmware
   rog-deck-power wifi-powersave on|off
+  rog-deck-power panel-power <0-4>         amdgpu panel power savings: 0 off, 4 strongest
 """
 
 import glob
@@ -22,7 +23,7 @@ import sys
 
 sys.dont_write_bytecode = True
 
-VERSION = 1
+VERSION = 2
 STATE = "/run/rog-deck-power.json"
 IW = "/usr/bin/iw"
 
@@ -48,6 +49,7 @@ TARGETS = {
     "fppt": ("ppt_fppt", "ppt_pl3_fppt"),
 }
 POLICY = LEGACY + "/throttle_thermal_policy"
+PANEL_POWER = "/sys/class/drm/card*-eDP-*/amdgpu/panel_power_savings"
 
 
 class Failure(Exception):
@@ -168,6 +170,16 @@ def wifi_powersave(args):
         raise Failure("no Wi-Fi interface found")
 
 
+def panel_power(args):
+    if len(args) != 1 or not re.fullmatch(r"[0-4]", args[0]):
+        raise Failure("panel-power <0-4>")
+    paths = glob.glob(PANEL_POWER)
+    if not paths:
+        raise Failure("this screen has no panel power savings")
+    for path in paths:
+        write(path, args[0])
+
+
 def main(argv):
     if argv == ["version"]:
         print(VERSION)
@@ -177,8 +189,10 @@ def main(argv):
         reset()
     elif argv and argv[0] == "wifi-powersave":
         wifi_powersave(argv[1:])
+    elif argv and argv[0] == "panel-power":
+        panel_power(argv[1:])
     else:
-        raise Failure("version | ppt <spl> <sppt> <fppt> | reset | wifi-powersave on|off")
+        raise Failure("version | ppt <spl> <sppt> <fppt> | reset | wifi-powersave on|off | panel-power <0-4>")
 
 
 if __name__ == "__main__":

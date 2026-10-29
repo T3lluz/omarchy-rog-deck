@@ -67,6 +67,7 @@ Item {
   // applies. force: the firmware may have reset the CPU limits since.
   property bool pendingApply: false
   property bool pendingForce: false
+  property bool pendingRecheck: false
   property int refreshRetries: 0
   property bool pendingRefreshCheck: false
 
@@ -119,9 +120,9 @@ Item {
     else if (startupDone) {
       if (pendingApply) {
         pendingApply = false
-        var force = pendingForce
-        pendingForce = false
-        applyPower(force)
+        var force = pendingForce, recheck = pendingRecheck
+        pendingForce = pendingRecheck = false
+        applyPower(force, recheck)
       }
       if (pendingRefreshCheck) {
         pendingRefreshCheck = false
@@ -146,7 +147,7 @@ Item {
       var b = Model.animeBuiltins(a)
       run(["anime", "builtins", b.boot, b.awake, b.sleep, b.shutdown])
     }
-    applyPower(true)
+    applyPower(true, false)
   }
 
   // Keep the saved FN-lock choice in step with Shift+Esc, and the panel
@@ -166,16 +167,18 @@ Item {
   // ---------------------------------------------- battery saver, CPU limit
 
   // Ask for a fresh status and apply once it is in.
-  function schedulePower(force) {
+  function schedulePower(force, recheck) {
     if (force) pendingForce = true
+    if (recheck) pendingRecheck = true
     pendingApply = true
     refresh()
   }
 
   // Put Battery saver's settings and Silent's CPU limit in place for the
   // current charger and mode. Every step compares with the status first, so
-  // running it again changes nothing.
-  function applyPower(force) {
+  // running it again changes nothing. recheck: the second look a few seconds
+  // after a trigger, which writes the CPU limit again but schedules no more.
+  function applyPower(force, recheck) {
     if (!settingsLoaded || !status) return
     var saver = settings.saver
     var active = saverActive
@@ -200,20 +203,25 @@ Item {
       if (saver.wifi && status.power && status.power.helper === "ok" && wifi !== null && wifi !== active)
         run(["saver", "wifi", active ? "on" : "off"])
     }
-    // Panel power saving belongs to power-profiles-daemon, which only
-    // applies it on battery; Battery saver keeps the action switched on.
+    // Panel power savings: power-profiles-daemon's own action waits for 50%
+    // battery, so Battery saver sets the level itself while it holds.
     var screen = status.saver ? status.saver.screen : null
-    if (saver.enabled && screen && screen.available && screen.enabled !== saver.screen)
-      setScreenAction(saver.screen)
-    if (changed || force) {
+    var helperOk = !!status.power && status.power.helper === "ok"
+    if (screen && screen.available && helperOk && (saver.enabled || was === true)) {
+      var level = Model.screenLevel(active, saver)
+      if (screen.level !== level || (saver.enabled && screen.ppd)) run(["saver", "screen", String(level)])
+    }
+    if ((changed || force) && !recheck) {
       applyRefreshMode()
       powerRecheck.restart()
     }
-    applyLimit(force)
+    applyLimit(force || recheck)
   }
 
   // Silent's CPU limit. The firmware loads each mode's own limits on a mode
-  // change or a plug/unplug, so after those (force) it is written again.
+  // change or a plug/unplug and doesn't report them, so after those (force)
+  // it is written again. The firmware only honours it while Silent runs a
+  // custom fan curve; `power limit` switches that on, `power off` back.
   function applyLimit(force) {
     var power = status ? status.power : null
     if (!power || !power.supported || power.helper !== "ok") return
@@ -232,8 +240,6 @@ Item {
     if (on) {
       ensureHelper()
     } else {
-      var screen = status && status.saver ? status.saver.screen : null
-      if (screen && screen.enabled && settings.saver.screen) setScreenAction(false)
       // Off on battery with no rate picked: back to the top rate.
       var display = status ? status.display : null
       if (UPower.onBattery && !settings.refresh && display && display.rates.length > 0)
@@ -245,12 +251,7 @@ Item {
 
   function setScreenSaving(on) {
     saveSetting(["saver", "screen"], on)
-    setScreenAction(on)
-  }
-
-  function setScreenAction(on) {
-    setOptimistic("saver.screen", on)
-    run(["saver", "screen", on ? "on" : "off"])
+    schedulePower(false)
   }
 
   function setPowerLimit(on, watts) {
@@ -679,7 +680,7 @@ Item {
   Timer {
     id: powerRecheck
     interval: 6000
-    onTriggered: root.schedulePower(false)
+    onTriggered: root.schedulePower(false, true)
   }
 
   // hyprmoncfgd may still put its saved rate back after a switch; try once more.

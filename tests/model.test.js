@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, gpuModes, gpuModeInfo, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, formatSeconds, barParts, BAR_STATS, PROFILES, gpuConfirmText, gpuNotice }")()
+const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, gpuModes, gpuModeInfo, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, formatSeconds, barParts, BAR_STATS, PROFILES, gpuConfirmText, gpuNotice, saverOverdrive, pptTriple, powerLimitWatts, limitCaption, limitApplied, batteryGpuNotice, powerHelperNotice }")()
 
 // Trimmed from a real `bin/rog-deck status` on a GA402NV.
 const status = {
@@ -130,6 +130,14 @@ assert.strictEqual(Model.refreshTarget("auto", { rates: [120, 240] }, false), 12
 assert.strictEqual(Model.refreshTarget("60", display, true), 60)
 assert.strictEqual(Model.refreshTarget("144", display, true), 0)
 assert.strictEqual(Model.refreshTarget(null, display, true), 0)
+// Battery saver: 60 Hz on battery whatever is picked; back to the pick, or the top rate, on the charger.
+assert.strictEqual(Model.refreshTarget("165", display, false, true), 60)
+assert.strictEqual(Model.refreshTarget(null, display, false, true), 60)
+assert.strictEqual(Model.refreshTarget(null, display, true, true), 165)
+assert.strictEqual(Model.refreshTarget("auto", display, true, true), 165)
+assert.strictEqual(Model.refreshTarget("60", display, true, true), 60)
+assert.strictEqual(Model.refreshTarget(null, display, false, false), 0)
+assert.strictEqual(Model.refreshTarget(null, null, false, true), 0)
 
 // fan curves
 const pts = [{ t: 40, p: 10 }, { t: 50, p: 20 }, { t: 60, p: 30 }]
@@ -171,6 +179,62 @@ assert.strictEqual(Model.gpuConfirmText({ needsSetup: true }, "hybrid"), "Switch
 assert.strictEqual(Model.gpuNotice({ mode: "hybrid" }, "hybrid"), null)
 assert.strictEqual(Model.gpuNotice(null, "hybrid"), null)
 assert.strictEqual(Model.gpuNotice({ mode: "dedicated" }, "integrated").text, "Restart to finish switching to Integrated GPU mode")
+
+// Battery saver and panel overdrive
+assert.deepStrictEqual(Model.saverOverdrive(true, 1, null), { set: 0, remember: 1 })
+assert.deepStrictEqual(Model.saverOverdrive(true, 0, 1), { set: null })
+assert.deepStrictEqual(Model.saverOverdrive(false, 0, 1), { set: 1 })
+assert.deepStrictEqual(Model.saverOverdrive(false, 0, 0), { set: null })
+assert.deepStrictEqual(Model.saverOverdrive(false, 1, 1), { set: null })
+assert.deepStrictEqual(Model.saverOverdrive(false, 0, null), { set: null })
+assert.deepStrictEqual(Model.saverOverdrive(true, null, 1), { set: null })
+assert.deepStrictEqual(Model.defaultSettings().saver, { enabled: false, screen: true, wifi: true, overdriveAc: null })
+const saved = Model.mergeSettings('{"saver":{"enabled":true,"overdriveAc":1},"powerLimit":{"enabled":true,"watts":20}}')
+assert.strictEqual(saved.saver.enabled, true)
+assert.strictEqual(saved.saver.overdriveAc, 1)
+assert.strictEqual(saved.saver.screen, true)
+assert.deepStrictEqual(saved.powerLimit, { enabled: true, watts: 20 })
+assert.deepStrictEqual(Model.mergeSettings('{"powerLimit":{"watts":"lots"}}').powerLimit, { enabled: false, watts: 15 })
+
+// CPU limit: the GA402NV's ranges on battery and on the charger
+const dc = { spl: [15, 35], sppt: [25, 35], fppt: [35, 65] }
+const ac = { spl: [15, 80], sppt: [25, 80], fppt: [35, 80] }
+assert.deepStrictEqual(Model.pptTriple(15, dc), { spl: 15, sppt: 25, fppt: 35 })
+assert.deepStrictEqual(Model.pptTriple(28, dc), { spl: 28, sppt: 28, fppt: 35 })
+assert.deepStrictEqual(Model.pptTriple(35, dc), { spl: 35, sppt: 35, fppt: 35 })
+assert.deepStrictEqual(Model.pptTriple(10, dc), { spl: 15, sppt: 25, fppt: 35 })
+assert.deepStrictEqual(Model.pptTriple(99, dc), { spl: 35, sppt: 35, fppt: 65 })
+assert.deepStrictEqual(Model.pptTriple(30, ac), { spl: 30, sppt: 30, fppt: 35 })
+assert.strictEqual(Model.pptTriple(15, null), null)
+const power = { supported: true, helper: "ok", slider: [15, 35], ranges: dc }
+const limitOn = { powerLimit: { enabled: true, watts: 20 } }
+assert.strictEqual(Model.powerLimitWatts(limitOn, "power-saver", power), 20)
+assert.strictEqual(Model.powerLimitWatts(limitOn, "balanced", power), 0)
+assert.strictEqual(Model.powerLimitWatts(limitOn, "performance", power), 0)
+assert.strictEqual(Model.powerLimitWatts({ powerLimit: { enabled: false, watts: 20 } }, "power-saver", power), 0)
+assert.strictEqual(Model.powerLimitWatts({ powerLimit: { enabled: true, watts: 5 } }, "power-saver", power), 15)
+assert.strictEqual(Model.powerLimitWatts({ powerLimit: { enabled: true, watts: 50 } }, "power-saver", power), 35)
+assert.strictEqual(Model.powerLimitWatts(limitOn, "power-saver", { supported: false }), 0)
+assert.strictEqual(Model.limitCaption({ spl: 15, sppt: 25, fppt: 35 }), "15 W sustained · boosts to 25 / 35 W")
+assert.strictEqual(Model.limitCaption({ spl: 28, sppt: 28, fppt: 35 }), "28 W sustained · boosts to 28 / 35 W")
+assert.strictEqual(Model.limitCaption({ spl: 20, sppt: 25, fppt: 25 }), "20 W sustained · boosts to 25 W")
+assert.strictEqual(Model.limitCaption({ spl: 35, sppt: 35, fppt: 35 }), "35 W, boosts included")
+assert.strictEqual(Model.limitApplied({ spl: 15, sppt: 25, fppt: 35, ac: false }, { spl: 15, sppt: 25, fppt: 35 }, false), true)
+assert.strictEqual(Model.limitApplied({ spl: 15, sppt: 25, fppt: 35, ac: true }, { spl: 15, sppt: 25, fppt: 35 }, false), false)
+assert.strictEqual(Model.limitApplied(null, { spl: 15, sppt: 25, fppt: 35 }, false), false)
+
+// Battery banners
+const hybrid = { mode: "hybrid", modes: ["integrated", "hybrid", "dedicated"] }
+assert.strictEqual(Model.batteryGpuNotice(hybrid, "hybrid", true, true).action, "integrated")
+assert.strictEqual(Model.batteryGpuNotice(hybrid, "integrated", true, true), null)
+assert.strictEqual(Model.batteryGpuNotice(hybrid, "hybrid", false, true), null)
+assert.strictEqual(Model.batteryGpuNotice(hybrid, "hybrid", true, false), null)
+assert.strictEqual(Model.batteryGpuNotice({ mode: "integrated", modes: ["integrated", "hybrid"] }, "integrated", true, true), null)
+assert.strictEqual(Model.powerHelperNotice({ supported: true, helper: "missing" }, true).action, "power-setup")
+assert.ok(Model.powerHelperNotice({ supported: true, helper: "outdated" }, true).text.indexOf("update") !== -1)
+assert.strictEqual(Model.powerHelperNotice({ supported: true, helper: "ok" }, true), null)
+assert.strictEqual(Model.powerHelperNotice({ supported: true, helper: "missing" }, false), null)
+assert.strictEqual(Model.powerHelperNotice({ supported: false, helper: "missing" }, true), null)
 
 // Update wording and banners are the panel kit's: tests/update.test.js.
 

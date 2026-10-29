@@ -1,0 +1,192 @@
+#!/usr/bin/python3 -I
+"""rog-deck-power - the one helper ROG Deck runs as root at runtime.
+
+`rog-deck power setup` installs a copy, through pkexec, as
+/usr/local/libexec/rog-deck-power (root-owned) with a polkit rule that lets
+the person at the laptop run it without a password. So it takes no paths
+and no free text: only the commands below, with every value checked against
+the firmware's limits for this exact laptop and power source.
+
+  rog-deck-power version
+  rog-deck-power ppt <spl> <sppt> <fppt>   CPU limits in watts: sustained, slow and fast boost
+  rog-deck-power reset                     hand the CPU limits back to the firmware
+  rog-deck-power wifi-powersave on|off
+"""
+
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
+
+sys.dont_write_bytecode = True
+
+VERSION = 1
+STATE = "/run/rog-deck-power.json"
+IW = "/usr/bin/iw"
+
+# The firmware's CPU limits in watts as (min, max), per power source, from
+# the kernel's asus-armoury table (newer kernels than 7.2 carry it). The
+# minimums matter as much as the maximums: below them some AMD laptops get
+# stuck throttling until they power off.
+LIMITS = {
+    "GA402NV": {
+        "ac": {"spl": (15, 80), "sppt": (25, 80), "fppt": (35, 80)},
+        "dc": {"spl": (15, 35), "sppt": (25, 35), "fppt": (35, 65)},
+    },
+}
+
+# Where each limit is written: the asus-nb-wmi attribute where it exists
+# (the same ASUS ACPI calls G-Helper makes: 0x1200A3, 0x1200A0, 0x1200C1),
+# else asus-armoury's firmware attribute on kernels that have dropped it.
+LEGACY = "/sys/devices/platform/asus-nb-wmi"
+ARMOURY = "/sys/class/firmware-attributes/asus-armoury/attributes"
+TARGETS = {
+    "spl": ("ppt_pl1_spl", "ppt_pl1_spl"),
+    "sppt": ("ppt_pl2_sppt", "ppt_pl2_sppt"),
+    "fppt": ("ppt_fppt", "ppt_pl3_fppt"),
+}
+POLICY = LEGACY + "/throttle_thermal_policy"
+
+
+class Failure(Exception):
+    pass
+
+
+def read(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def write(path, value):
+    try:
+        with open(path, "w") as f:
+            f.write(str(value))
+    except OSError as error:
+        raise Failure("could not write %s: %s" % (path, error.strerror or error))
+
+
+def board():
+    return read("/sys/class/dmi/id/board_name")
+
+
+def on_ac():
+    for supply in glob.glob("/sys/class/power_supply/*"):
+        if read(supply + "/type") in ("Mains", "USB") and read(supply + "/online") == "1":
+            return True
+    return False
+
+
+def limits(name=None, ac=None):
+    """The (min, max) table for this laptop on its current power source, or None."""
+    table = LIMITS.get(name if name is not None else board())
+    if not table:
+        return None
+    return table["ac" if (on_ac() if ac is None else ac) else "dc"]
+
+
+def target(key):
+    legacy, armoury = TARGETS[key]
+    if os.path.exists(os.path.join(LEGACY, legacy)):
+        return os.path.join(LEGACY, legacy)
+    if os.path.exists(os.path.join(ARMOURY, armoury, "current_value")):
+        return os.path.join(ARMOURY, armoury, "current_value")
+    return None
+
+
+def check(values, table):
+    """Raise unless spl <= sppt <= fppt and each is inside the firmware's range."""
+    if table is None:
+        raise Failure("CPU power limits aren't supported on %s" % (board() or "this laptop"))
+    for key in ("spl", "sppt", "fppt"):
+        low, high = table[key]
+        if not low <= values[key] <= high:
+            raise Failure("%s must be %d-%d W on this power source, got %d" % (key, low, high, values[key]))
+    if not values["spl"] <= values["sppt"] <= values["fppt"]:
+        raise Failure("limits must rise from sustained to fast boost, got %(spl)d/%(sppt)d/%(fppt)d" % values)
+
+
+def save_state(state):
+    tmp = STATE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(state, f)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, STATE)
+
+
+def parse_watts(text):
+    if not re.fullmatch(r"[0-9]{1,3}", text or ""):
+        raise Failure("watts must be a whole number, got %r" % text)
+    return int(text)
+
+
+def ppt(args):
+    if len(args) != 3:
+        raise Failure("ppt <spl> <sppt> <fppt>")
+    values = dict(zip(("spl", "sppt", "fppt"), map(parse_watts, args)))
+    ac = on_ac()
+    check(values, limits(ac=ac))
+    paths = {key: target(key) for key in values}
+    if None in paths.values():
+        raise Failure("this kernel exposes no CPU power limit controls")
+    # G-Helper's order: sustained, then slow boost, then fast boost.
+    for key in ("spl", "sppt", "fppt"):
+        write(paths[key], values[key])
+    save_state(dict(values, ac=ac, policy=read(POLICY)))
+
+
+def reset():
+    # Writing the current thermal policy again makes the firmware load that
+    # mode's own limits, the same thing a mode change does.
+    policy = read(POLICY)
+    if policy is not None and re.fullmatch(r"[0-9]", policy):
+        write(POLICY, policy)
+    try:
+        os.remove(STATE)
+    except FileNotFoundError:
+        pass
+
+
+def wifi_powersave(args):
+    if args not in (["on"], ["off"]):
+        raise Failure("wifi-powersave on|off")
+    found = False
+    for phy in glob.glob("/sys/class/net/*/phy80211"):
+        name = os.path.basename(os.path.dirname(phy))
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,15}", name):
+            continue
+        found = True
+        out = subprocess.run([IW, "dev", name, "set", "power_save", args[0]],
+                             capture_output=True, text=True, timeout=5)
+        if out.returncode != 0:
+            raise Failure("iw %s: %s" % (name, (out.stderr or out.stdout).strip() or "exit %d" % out.returncode))
+    if not found:
+        raise Failure("no Wi-Fi interface found")
+
+
+def main(argv):
+    if argv == ["version"]:
+        print(VERSION)
+    elif argv and argv[0] == "ppt":
+        ppt(argv[1:])
+    elif argv == ["reset"]:
+        reset()
+    elif argv and argv[0] == "wifi-powersave":
+        wifi_powersave(argv[1:])
+    else:
+        raise Failure("version | ppt <spl> <sppt> <fppt> | reset | wifi-powersave on|off")
+
+
+if __name__ == "__main__":
+    if sys.argv[1:] != ["version"] and os.geteuid() != 0:
+        print("rog-deck-power: run through pkexec", file=sys.stderr)
+        sys.exit(1)
+    try:
+        main(sys.argv[1:])
+    except Failure as error:
+        print("rog-deck-power: %s" % error, file=sys.stderr)
+        sys.exit(1)

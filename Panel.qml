@@ -110,6 +110,10 @@ Panel {
       if (gpu) service.askGpuMode(String(service.pick("gpu.next", gpu.next)))
     } else if (notice.action === "update") {
       service.applyUpdate()
+    } else if (notice.action === "integrated") {
+      service.askGpuMode("integrated")
+    } else if (notice.action === "power-setup") {
+      service.ensureHelper()
     }
   }
 

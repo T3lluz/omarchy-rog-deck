@@ -134,6 +134,12 @@ function defaultSettings() {
     kbdLastLevel: 2,
     fnlock: null,
     refresh: null,
+    // Battery saver: on battery, 60 Hz, panel overdrive off, panel power
+    // saving and Wi-Fi power save. overdriveAc is the overdrive choice made
+    // on the charger, put back when it returns.
+    saver: { enabled: false, screen: true, wifi: true, overdriveAc: null },
+    // Silent's CPU limit in watts, applied only while Silent is active.
+    powerLimit: { enabled: false, watts: 15 },
     updates: { autoCheck: true }
   }
 }
@@ -276,16 +282,64 @@ function animeContent(anime) {
 
 // -------------------------------------------------------------- display
 
-// Hz to switch to for a refresh setting: "auto" follows the charger.
-function refreshTarget(mode, display, onAc) {
-  if (!mode || !display || !display.rates || display.rates.length === 0) return 0
+// Hz to switch to for a refresh setting, or 0 to leave it: "auto" follows
+// the charger. Battery saver holds 60 Hz on battery whatever the setting,
+// and puts the top rate back on the charger unless a fixed rate was picked.
+function refreshTarget(mode, display, onAc, saver) {
+  if (!display || !display.rates || display.rates.length === 0) return 0
   var rates = display.rates
-  if (mode === "auto") {
-    if (onAc) return rates[rates.length - 1]
-    return rates.indexOf(60) !== -1 ? 60 : rates[0]
-  }
+  var low = rates.indexOf(60) !== -1 ? 60 : rates[0]
+  if (saver && !onAc) return low
+  if (saver && !mode) mode = "auto"
+  if (!mode) return 0
+  if (mode === "auto") return onAc ? rates[rates.length - 1] : low
   var hz = parseInt(mode, 10)
   return rates.indexOf(hz) !== -1 ? hz : 0
+}
+
+// ------------------------------------------------------ battery saver
+
+// What Battery saver does to panel overdrive when it starts (active) or
+// stops holding the battery settings: { set: 0|1|null, remember: 0|1 }.
+// Starting turns an "on" off and remembers it; stopping puts it back.
+function saverOverdrive(active, current, remembered) {
+  if (current !== 0 && current !== 1) return { set: null }
+  if (active) return current === 1 ? { set: 0, remember: 1 } : { set: null }
+  return remembered === 1 && current === 0 ? { set: 1 } : { set: null }
+}
+
+// Sustained at `watts`; the boosts follow it but never drop below their
+// firmware minimum. bin/rog-deck's ppt_triple does the same when applying.
+function pptTriple(watts, ranges) {
+  if (!ranges || !ranges.spl || !ranges.sppt || !ranges.fppt) return null
+  function clamp(value, bounds) { return Math.max(bounds[0], Math.min(bounds[1], value)) }
+  var w = Math.round(Number(watts) || 0)
+  var spl = clamp(w, ranges.spl)
+  var sppt = clamp(Math.max(w, spl), ranges.sppt)
+  return { spl: spl, sppt: sppt, fppt: clamp(Math.max(w, sppt), ranges.fppt) }
+}
+
+// The watts to hold the CPU to in this mode, or 0 for the firmware's own
+// limits. Only Silent gets a limit.
+function powerLimitWatts(settings, profile, power) {
+  var limit = settings && settings.powerLimit
+  if (!limit || !limit.enabled || profile !== "power-saver") return 0
+  if (!power || !power.supported || !power.slider) return 0
+  var w = Math.round(Number(limit.watts) || 0)
+  return Math.max(power.slider[0], Math.min(power.slider[1], w))
+}
+
+function limitCaption(triple) {
+  if (!triple) return ""
+  if (triple.spl === triple.sppt && triple.sppt === triple.fppt) return triple.spl + " W, boosts included"
+  var boost = triple.sppt === triple.fppt ? triple.sppt + " W" : triple.sppt + " / " + triple.fppt + " W"
+  return triple.spl + " W sustained · boosts to " + boost
+}
+
+// Whether the helper's last write is this triple on this power source.
+function limitApplied(applied, triple, onAc) {
+  return !!applied && !!triple && applied.spl === triple.spl && applied.sppt === triple.sppt
+    && applied.fppt === triple.fppt && applied.ac === onAc
 }
 
 // ----------------------------------------------------------------- fans
@@ -392,4 +446,23 @@ function gpuNotice(gpu, next) {
   if (!gpu || !next || next === gpu.mode) return null
   return { key: "gpu", tone: "accent", icon: "󰜉", text: "Restart to finish switching to " + gpuModeInfo(next).label + " GPU mode",
            action: "restart", actionLabel: "Restart" }
+}
+
+// With Battery saver on, a banner while on battery with the NVIDIA GPU in
+// use, pointing at Integrated, or null.
+function batteryGpuNotice(gpu, next, onBattery, saver) {
+  if (!saver || !onBattery || !gpu || !gpu.modes || gpu.modes.indexOf("integrated") === -1) return null
+  if (gpu.mode === "integrated" || next === "integrated") return null
+  return { key: "gpu-battery", tone: "accent", icon: "󰌪", dismissable: true,
+           text: "On battery in " + gpuModeInfo(gpu.mode).label + " mode. Integrated keeps the NVIDIA GPU off and lasts longest",
+           action: "integrated", actionLabel: "Integrated" }
+}
+
+// The banner asking to install or update the power helper, or null.
+function powerHelperNotice(power, wanted) {
+  if (!wanted || !power || !power.supported || power.helper === "ok") return null
+  return { key: "power-helper", tone: "accent", icon: "󰌾", action: "power-setup", actionLabel: "Set up",
+           text: power.helper === "outdated"
+             ? "ROG Deck's power helper needs an update. It asks for your password once"
+             : "The CPU limit and Wi-Fi power save need ROG Deck's power helper. It asks for your password once" }
 }

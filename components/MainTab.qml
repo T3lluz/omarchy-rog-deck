@@ -15,6 +15,11 @@ Column {
   readonly property var watts: status && status.watts ? status.watts : ({})
   readonly property var battery: status ? status.battery : null
   readonly property var anime: status ? status.anime : null
+  // Silent's CPU limit, shown only while Silent runs.
+  readonly property var power: status && status.power ? status.power : null
+  readonly property var limit: service ? service.settings.powerLimit : ({ enabled: false, watts: 15 })
+  readonly property bool limitShown: !!power && power.supported && !!power.slider && deck.activeProfile === "power-saver"
+  readonly property var limitTriple: limitShown ? Model.pptTriple(Model.powerLimitWatts({ powerLimit: { enabled: true, watts: limit.watts } }, "power-saver", power), power.ranges) : null
   // Whether the running mode uses its own fan curve (Fans tab).
   readonly property string curveNote: {
     var curves = service ? service.fanCurves : null
@@ -61,6 +66,41 @@ Column {
         fontFamily: tab.deck.fontFamily
         onClicked: if (tab.service) tab.service.setProfile(modelData.key)
       }
+    }
+  }
+
+  Column {
+    width: parent.width
+    spacing: Style.space(8)
+    visible: tab.limitShown
+
+    SwitchRow {
+      width: parent.width
+      icon: "󰻠"
+      label: "CPU power limit"
+      hint: {
+        if (!tab.limit.enabled) return "Hold Silent under the firmware's own limit" + (tab.power && tab.power.helper !== "ok" ? ". Asks for your password once" : "")
+        return Model.limitCaption(tab.limitTriple)
+      }
+      checked: tab.limit.enabled
+      foreground: tab.deck.fg
+      fontFamily: tab.deck.fontFamily
+      onToggled: tab.service.setPowerLimit(!checked, null)
+    }
+
+    SliderField {
+      width: parent.width
+      visible: tab.limit.enabled
+      label: "Silent limit (W)"
+      from: tab.power && tab.power.slider ? tab.power.slider[0] : 15
+      to: tab.power && tab.power.slider ? tab.power.slider[1] : 35
+      step: 1
+      showField: true
+      value: tab.limit.watts
+      bar: tab.deck.bar
+      foreground: tab.deck.fg
+      fontFamily: tab.deck.fontFamily
+      onCommitted: function(v) { tab.service.setPowerLimit(true, Math.round(v)) }
     }
   }
 
@@ -139,7 +179,8 @@ Column {
       icon: "󰍹"
       caption: "SCREEN"
       value: tab.status && tab.status.display ? tab.status.display.refresh + " Hz" : "—"
-      note: tab.service && tab.service.settings.refresh === "auto" ? "Auto rate" : "Fixed rate"
+      note: tab.service && tab.service.saverActive ? "Battery saver"
+        : tab.service && tab.service.settings.refresh === "auto" ? "Auto rate" : "Fixed rate"
       foreground: tab.deck.fg
       fontFamily: tab.deck.fontFamily
     }

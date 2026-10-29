@@ -20,6 +20,8 @@ Column {
   readonly property string gpuNext: gpu && service ? String(service.pick("gpu.next", gpu.next)) : ""
   readonly property bool gpuPending: !!gpu && gpuNext !== gpu.mode
   readonly property var updater: service ? service.updater : null
+  readonly property var saver: service ? service.settings.saver : ({ enabled: false, wifi: true })
+  readonly property var screenSaving: status && status.saver ? status.saver.screen : null
 
   function armouryOn(name) {
     var attr = armoury[name]
@@ -35,7 +37,8 @@ Column {
   SectionHeader {
     icon: tab.status && tab.status.ac ? "󰂄" : "󰁹"
     title: "BATTERY"
-    detail: tab.battery ? (Model.batteryLine(tab.battery, tab.status.ac) + (tab.battery.status ? " · " + tab.battery.status : "")).toUpperCase() : ""
+    detail: tab.battery ? (Model.batteryLine(tab.battery, tab.status.ac) + (tab.battery.status ? " · " + tab.battery.status : "")
+                           + (tab.service && tab.service.saverActive ? " · saver on" : "")).toUpperCase() : ""
     foreground: tab.deck.fg
     fontFamily: tab.deck.fontFamily
     visible: !!tab.battery && tab.battery.limit !== null
@@ -91,6 +94,18 @@ Column {
         onClicked: tab.service.chargeOnce()
       }
     }
+
+    SwitchRow {
+      width: parent.width
+      icon: "󰌪"
+      label: "Battery saver"
+      hint: "On battery: 60 Hz, panel overdrive off, screen power saving" + (tab.saver.wifi ? ", Wi-Fi power save" : "")
+        + ". All back when plugged in"
+      checked: tab.saver.enabled
+      foreground: tab.deck.fg
+      fontFamily: tab.deck.fontFamily
+      onToggled: tab.service.setSaver(!checked)
+    }
   }
 
   // ---------- Display ----------
@@ -123,11 +138,27 @@ Column {
     visible: !!tab.armoury.panel_overdrive
     icon: "󱐋"
     label: "Panel overdrive"
-    hint: "Faster pixel response, less ghosting"
+    hint: "Faster pixel response, less ghosting" + (tab.saver.enabled ? ". Off on battery (Battery saver)" : "")
     checked: tab.armouryOn("panel_overdrive")
     foreground: tab.deck.fg
     fontFamily: tab.deck.fontFamily
     onToggled: tab.service.setArmoury("panel_overdrive", checked ? 0 : 1)
+  }
+
+  SwitchRow {
+    width: parent.width
+    visible: !!tab.screenSaving && tab.screenSaving.available
+    icon: "󰃞"
+    label: "Screen power saving"
+    hint: {
+      var s = tab.screenSaving
+      if (s && s.level > 0) return "Saving now (level " + s.level + "): less backlight power, less accurate colours"
+      return "Less backlight power on battery, less accurate colours"
+    }
+    checked: tab.screenSaving && tab.service ? !!tab.service.pick("saver.screen", tab.screenSaving.enabled) : false
+    foreground: tab.deck.fg
+    fontFamily: tab.deck.fontFamily
+    onToggled: tab.service.setScreenSaving(!checked)
   }
 
   // ---------- Keyboard and firmware ----------

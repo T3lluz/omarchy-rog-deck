@@ -9,6 +9,7 @@ How ROG Deck is put together, for anyone (or any agent) changing it. The user-fa
 - `components/`: the tabs, the panel kit (below) and the shared updater. The mode icons are the Nerd Font glyphs Omarchy's own power menu uses, from `Model.PROFILES`.
 - `Model.js`: parsing and formatting, tested by `tests/model.test.js`.
 - `bin/rog-deck`: the backend (Python): asusd over D-Bus, power-profiles-daemon, sysfs, hyprctl, `nvidia-smi` only while the dGPU is awake. `rog-deck update` hands over to `bin/plugin-update`.
+- `bin/rog-deck-power`: the root helper for Silent's CPU limit and Wi-Fi power save. `rog-deck power setup` copies it to `/usr/local/libexec/rog-deck-power` with a polkit rule for the user; `bin/rog-deck` loads this file only to read its `LIMITS` table.
 - `docs/PLAN.md`: the original design notes.
 
 ## Test
@@ -36,6 +37,9 @@ Panels never cut text: a `Notice` shows all of its message, a `Caption` breaks l
 - **IPC** is answered by whichever monitor's widget registered first, so `open`, `close` and `toggle` go through the shell's `summon`, `hide` and `toggle`, which pick the focused monitor.
 - **Nothing may write inside the plugin folder at runtime.** The shell watches it and reloads every plugin when a file appears there. Python sets `sys.dont_write_bytecode`; state goes to `~/.local/state` or `~/.config`. Two exceptions: `.git/` is ignored by the watcher, so `update check` may fetch; and `update apply` rewrites the folder on purpose, which is why it runs detached (`Quickshell.execDetached`) and reports through `~/.local/state/rog-deck/update.json`.
 - **Integrated GPU mode is supergfxd's**, never a queued `dgpu_disable=1`: asusd writes queued GPU values at shutdown, nvidia_drm (from the initramfs) still holds the card then, and the write fails with EIO, leaving the laptop in Hybrid.
+- **The power helper runs as root without a password**, so it takes no paths or free text: every value is checked against `LIMITS` for the board and the power source it reads itself, never below the minimums (some AMD laptops throttle until power-off under them). Change what it accepts only with `tests/test_power.py`, and bump its `VERSION` so the panel offers the update. The polkit rule must only ever name the root-owned copy, never a file in the plugin folder.
+- **Battery saver and the CPU limit apply on a fresh status.** Triggers (charger, mode, wake, login) call `schedulePower`, which asks for a status and applies on the reply. Overdrive and Wi-Fi move only when the saver starts or stops holding, and for 15 s after; the CPU limit is rewritten after every trigger because the firmware loads each mode's limits on mode and charger changes and doesn't report them back.
+- **Refresh rate and hyprmoncfg:** save the rate into the profile the daemon will match, never into one with screens that aren't connected. `hold_rate` keeps a one-screen "Laptop" profile for that.
 - **QML changes need `omarchy restart shell`.** Hot reload can keep the old component cached.
 - **Pure logic goes in `Model.js`** (a `.pragma library` with no QML) so `node tests/*.test.js` can run it. Change it with a test.
 - Comments say why, in plain sentences. Match the surrounding code.

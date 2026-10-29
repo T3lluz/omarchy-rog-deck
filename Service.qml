@@ -10,8 +10,9 @@ import "components"
 // is placed: it owns the one status poller every panel reads from, runs
 // actions through bin/rog-deck, keeps the settings file, and does the jobs
 // that must happen with the panel closed: keyboard auto-off, putting FN-lock
-// back after login, following the charger for the Auto refresh rate, and
-// re-applying the keyboard effect after a theme change.
+// back after login, following the charger for the Auto refresh rate and
+// Battery saver, holding Silent's CPU limit, and re-applying the keyboard
+// effect after a theme change.
 // It also answers `omarchy-shell io.github.t3lluz.rog-deck …`.
 Item {
   id: root
@@ -56,6 +57,19 @@ Item {
   readonly property bool kbdIdleArmed: settingsLoaded && settings.kbdIdle.enabled && settings.kbdIdle.timeout > 0
     && !(settings.kbdIdle.keepOnAc && !UPower.onBattery)
 
+  // Battery saver holds its settings while on battery. lastSaverActive is
+  // what the last applyPower saw (null until the first one after the shell
+  // starts); saverSince is when that last changed.
+  readonly property bool saverActive: settingsLoaded && settings.saver.enabled && UPower.onBattery
+  property var lastSaverActive: null
+  property real saverSince: 0
+  // applyPower runs on a fresh status: a trigger asks for one and the reply
+  // applies. force: the firmware may have reset the CPU limits since.
+  property bool pendingApply: false
+  property bool pendingForce: false
+  property int refreshRetries: 0
+  property bool pendingRefreshCheck: false
+
   // ---------------------------------------------------------------- state
 
   function pick(key, actual) {
@@ -89,8 +103,11 @@ Item {
       lastError = "rog-deck status returned nothing"
       return
     }
+    var helperWas = status && status.power ? status.power.helper : ""
     status = next
     if (!actionProc.running && actionQueue.length === 0) optimistic = ({})
+    // The helper just got set up: put the limit and Wi-Fi in place.
+    if (helperWas && helperWas !== "ok" && next.power && next.power.helper === "ok") schedulePower(true)
     // Omarchy remembers a profile for AC and one for battery and applies it
     // on plug/unplug. asusd does the same from its own memory, so the two
     // race. Let Omarchy own it.
@@ -99,7 +116,19 @@ Item {
       run(["takeover"])
     }
     if (!startupDone && settingsLoaded) startup()
-    else if (startupDone) syncFromStatus()
+    else if (startupDone) {
+      if (pendingApply) {
+        pendingApply = false
+        var force = pendingForce
+        pendingForce = false
+        applyPower(force)
+      }
+      if (pendingRefreshCheck) {
+        pendingRefreshCheck = false
+        setRefreshTarget()
+      }
+      syncFromStatus()
+    }
   }
 
   // Once per shell start (so once per login): put back what asusd and keyd
@@ -117,15 +146,124 @@ Item {
       var b = Model.animeBuiltins(a)
       run(["anime", "builtins", b.boot, b.awake, b.sleep, b.shutdown])
     }
-    applyRefreshMode()
+    applyPower(true)
   }
 
-  // Keep the saved FN-lock choice in step with Shift+Esc.
+  // Keep the saved FN-lock choice in step with Shift+Esc, and the panel
+  // overdrive choice made on the charger, to put back after the battery.
   function syncFromStatus() {
-    if (status.fnlock && status.fnlock.available && !actionProc.running && actionQueue.length === 0) {
+    if (actionProc.running || actionQueue.length > 0) return
+    if (status.fnlock && status.fnlock.available) {
       var now = status.fnlock.on ? "on" : "off"
       if (settings.fnlock !== now) saveSetting(["fnlock"], now)
     }
+    var od = status.armoury ? status.armoury.panel_overdrive : null
+    if (od && settings.saver.enabled && lastSaverActive === false && !pendingApply && Date.now() - saverSince > 15000
+        && Number(od.value) !== settings.saver.overdriveAc)
+      saveSetting(["saver", "overdriveAc"], Number(od.value))
+  }
+
+  // ---------------------------------------------- battery saver, CPU limit
+
+  // Ask for a fresh status and apply once it is in.
+  function schedulePower(force) {
+    if (force) pendingForce = true
+    pendingApply = true
+    refresh()
+  }
+
+  // Put Battery saver's settings and Silent's CPU limit in place for the
+  // current charger and mode. Every step compares with the status first, so
+  // running it again changes nothing.
+  function applyPower(force) {
+    if (!settingsLoaded || !status) return
+    var saver = settings.saver
+    var active = saverActive
+    var was = lastSaverActive
+    var changed = was !== active
+    if (changed) {
+      lastSaverActive = active
+      saverSince = Date.now()
+    }
+    // Overdrive and Wi-Fi follow the saver starting or stopping, so a switch
+    // flipped by hand on battery stays until the next plug or unplug. For a
+    // few seconds after, they are checked again: asusd puts its own saved
+    // overdrive back on every plug and unplug. With the saver off they are
+    // left alone, except to undo what it held when it was just switched off.
+    var settling = Date.now() - saverSince < 15000
+    if (settling && (saver.enabled || was === true)) {
+      var od = status.armoury ? status.armoury.panel_overdrive : null
+      var plan = Model.saverOverdrive(active, od ? Number(pick("armoury.panel_overdrive", od.value)) : null, saver.overdriveAc)
+      if (plan.remember !== undefined && plan.remember !== saver.overdriveAc) saveSetting(["saver", "overdriveAc"], plan.remember)
+      if (plan.set !== null) setArmoury("panel_overdrive", plan.set)
+      var wifi = status.saver ? status.saver.wifi : null
+      if (saver.wifi && status.power && status.power.helper === "ok" && wifi !== null && wifi !== active)
+        run(["saver", "wifi", active ? "on" : "off"])
+    }
+    // Panel power saving belongs to power-profiles-daemon, which only
+    // applies it on battery; Battery saver keeps the action switched on.
+    var screen = status.saver ? status.saver.screen : null
+    if (saver.enabled && screen && screen.available && screen.enabled !== saver.screen)
+      setScreenAction(saver.screen)
+    if (changed || force) {
+      applyRefreshMode()
+      powerRecheck.restart()
+    }
+    applyLimit(force)
+  }
+
+  // Silent's CPU limit. The firmware loads each mode's own limits on a mode
+  // change or a plug/unplug, so after those (force) it is written again.
+  function applyLimit(force) {
+    var power = status ? status.power : null
+    if (!power || !power.supported || power.helper !== "ok") return
+    var profile = status.profile ? status.profile.active : ""
+    var watts = Model.powerLimitWatts(settings, profile, power)
+    var triple = watts ? Model.pptTriple(watts, power.ranges) : null
+    if (triple) {
+      if (force || !Model.limitApplied(power.applied, triple, !UPower.onBattery)) run(["power", "limit", String(watts)])
+    } else if (power.applied) {
+      run(["power", "off"])
+    }
+  }
+
+  function setSaver(on) {
+    saveSetting(["saver", "enabled"], on)
+    if (on) {
+      ensureHelper()
+    } else {
+      var screen = status && status.saver ? status.saver.screen : null
+      if (screen && screen.enabled && settings.saver.screen) setScreenAction(false)
+      // Off on battery with no rate picked: back to the top rate.
+      var display = status ? status.display : null
+      if (UPower.onBattery && !settings.refresh && display && display.rates.length > 0)
+        run(["refresh", String(display.rates[display.rates.length - 1])])
+    }
+    applyRefreshMode()
+    schedulePower(false)
+  }
+
+  function setScreenSaving(on) {
+    saveSetting(["saver", "screen"], on)
+    setScreenAction(on)
+  }
+
+  function setScreenAction(on) {
+    setOptimistic("saver.screen", on)
+    run(["saver", "screen", on ? "on" : "off"])
+  }
+
+  function setPowerLimit(on, watts) {
+    if (watts !== null && watts !== undefined) saveSetting(["powerLimit", "watts"], Math.round(watts))
+    saveSetting(["powerLimit", "enabled"], on)
+    if (on) ensureHelper()
+    schedulePower(false)
+  }
+
+  // The first use installs the root helper; pkexec asks for the password.
+  function ensureHelper() {
+    var power = status ? status.power : null
+    if (power && power.supported && power.helper !== "ok") run(["power", "setup"])
   }
 
   // ------------------------------------------------------------- settings
@@ -306,10 +444,16 @@ Item {
   }
 
   function applyRefreshMode() {
-    var target = Model.refreshTarget(settings.refresh, status ? status.display : null, !UPower.onBattery)
+    refreshRetries = 0
+    setRefreshTarget()
+  }
+
+  function setRefreshTarget() {
+    var target = Model.refreshTarget(settings.refresh, status ? status.display : null, !UPower.onBattery, settings.saver.enabled)
     if (!target || (status && status.display && status.display.refresh === target)) return
     setOptimistic("display.refresh", target)
     run(["refresh", String(target)])
+    refreshVerify.restart()
   }
 
   function setFnlock(on) {
@@ -347,8 +491,14 @@ Item {
     var list = []
     if (lastError) list.push({ key: "error", tone: "urgent", icon: "󰀦", text: lastError, dismissable: true })
     var gpu = status ? status.gpu : null
-    var gpuNotice = Model.gpuNotice(gpu, gpu ? String(pick("gpu.next", gpu.next)) : "")
+    var gpuNext = gpu ? String(pick("gpu.next", gpu.next)) : ""
+    var gpuNotice = Model.gpuNotice(gpu, gpuNext)
     if (gpuNotice) list.push(gpuNotice)
+    var batteryGpu = Model.batteryGpuNotice(gpu, gpuNext, UPower.onBattery, settingsLoaded && settings.saver.enabled)
+    if (batteryGpu) list.push(batteryGpu)
+    var helper = Model.powerHelperNotice(status ? status.power : null,
+                                         settingsLoaded && (settings.saver.enabled || settings.powerLimit.enabled))
+    if (helper) list.push(helper)
     if (updaterItem.notice) list.push(updaterItem.notice)
     return list.filter(function(n) { return dismissed[n.key] !== n.text })
   }
@@ -505,19 +655,56 @@ Item {
 
   onKbdIdleArmedChanged: if (!kbdIdleArmed && startupDone) run(["kbd", "idle-on"])
 
-  // Omarchy switches the profile when the charger changes; follow it, and
-  // move the Auto refresh rate with it.
+  // Omarchy switches the mode when the charger changes and asusd puts its
+  // saved overdrive back; let both land, then apply Battery saver, the
+  // refresh rate and the CPU limit on top. A mode change from anywhere (the
+  // panel, Fn+F5, Omarchy) re-applies the limit the same way.
   Connections {
     target: UPower
-    function onOnBatteryChanged() { chargerChanged.restart() }
+    function onOnBatteryChanged() { powerSettle.restart() }
+  }
+
+  Connections {
+    target: PowerProfiles
+    function onProfileChanged() { powerSettle.restart() }
   }
 
   Timer {
-    id: chargerChanged
-    interval: 1500
+    id: powerSettle
+    interval: 2000
+    onTriggered: root.schedulePower(true)
+  }
+
+  // Once more a few seconds after, for whatever landed late.
+  Timer {
+    id: powerRecheck
+    interval: 6000
+    onTriggered: root.schedulePower(false)
+  }
+
+  // hyprmoncfgd may still put its saved rate back after a switch; try once more.
+  Timer {
+    id: refreshVerify
+    interval: 8000
     onTriggered: {
+      if (root.refreshRetries >= 1) return
+      root.refreshRetries++
+      root.pendingRefreshCheck = true
       root.refresh()
-      root.applyRefreshMode()
+    }
+  }
+
+  // Waking from sleep shows as a long gap between ticks; the firmware may
+  // have put its own limits back, so apply again.
+  Timer {
+    property real last: Date.now()
+    interval: 5000
+    running: true
+    repeat: true
+    onTriggered: {
+      var now = Date.now()
+      if (now - last > 30000 && root.startupDone) powerSettle.restart()
+      last = now
     }
   }
 
@@ -542,6 +729,14 @@ Item {
     function fnlock(state: string): string {
       if (state === "toggle") root.setFnlock(!(root.status && root.status.fnlock && root.status.fnlock.on))
       else if (state === "on" || state === "off") root.setFnlock(state === "on")
+      else return "unknown"
+      return "ok"
+    }
+    // Battery saver: on, off or toggle.
+    function saver(state: string): string {
+      if (!root.settingsLoaded) return "not ready"
+      if (state === "toggle") root.setSaver(!root.settings.saver.enabled)
+      else if (state === "on" || state === "off") root.setSaver(state === "on")
       else return "unknown"
       return "ok"
     }

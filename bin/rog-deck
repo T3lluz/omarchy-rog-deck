@@ -4,9 +4,10 @@
 Everything goes through interfaces a normal user may touch: asusd on the
 system bus, power-profiles-daemon (via omarchy-powerprofiles-set), logind
 (brightnessctl), sysfs reads and hyprctl. FN-lock calls the user's own
-`fnlock` tool, which carries its own sudoers rule. The one root step is
-Integrated GPU mode: installing supergfxctl the first time and writing
-/etc/supergfxd.conf, done through pkexec.
+`fnlock` tool, which carries its own sudoers rule. The root steps go through
+pkexec: Integrated GPU mode (installing supergfxctl the first time and
+writing /etc/supergfxd.conf), and installing the power helper
+(bin/rog-deck-power) that sets CPU power limits and Wi-Fi power save.
 
   rog-deck status                          one JSON snapshot of everything the panel shows
   rog-deck profile <name|next|prev>        set the power mode for the current power source
@@ -30,6 +31,13 @@ Integrated GPU mode: installing supergfxctl the first time and writing
   rog-deck refresh <hz>
   rog-deck fnlock on|off
 
+  rog-deck power                           JSON: CPU limit support, ranges, what is applied
+  rog-deck power limit <watts>             cap the CPU: sustained <watts>, boosts raised to the firmware minimum
+  rog-deck power off                       hand the CPU limits back to the firmware
+  rog-deck power setup | uninstall         install or remove the root helper and its polkit rule
+  rog-deck saver screen on|off             power-profiles-daemon's panel power saving (battery only)
+  rog-deck saver wifi on|off               Wi-Fi power save
+
   rog-deck gpu                             JSON: running mode, mode after restart, choices
   rog-deck gpu set <integrated|hybrid|dedicated> [--restart]
   rog-deck gpu restart                     apply a pending GPU switch and reboot
@@ -48,6 +56,8 @@ Integrated GPU mode: installing supergfxctl the first time and writing
 import glob
 import json
 import os
+import pwd
+import re
 import shutil
 import subprocess
 import sys
@@ -107,6 +117,41 @@ else
   rm -f %s %s
 fi
 """ % (SUPERGFXD_DELAY, FORCE_IGPU_HOOK, SUPERGFXD_DELAY, FORCE_IGPU_HOOK)
+
+POWER_HELPER = "/usr/local/libexec/rog-deck-power"
+POWER_RULE = "/etc/polkit-1/rules.d/49-rog-deck-power.rules"
+POWER_STATE = "/run/rog-deck-power.json"
+# Run as root through pkexec; $1 is the helper to install, $2 the user the
+# polkit rule lets run it without a password. The helper is copied, never
+# run from the plugin folder: that folder is the user's to write, and a rule
+# pointing into it would hand root to anything running as the user.
+POWER_SETUP_SCRIPT = r"""
+set -e
+case "$2" in ''|*[!a-z0-9_-]*) echo "bad user name" >&2; exit 2;; esac
+install -D -o root -g root -m 0755 "$1" /usr/local/libexec/rog-deck-power
+tmp=/etc/polkit-1/rules.d/.49-rog-deck-power.rules.tmp
+cat > "$tmp" <<RULE
+// ROG Deck: $2, at the laptop, may run its power helper without a password.
+// The helper only takes CPU limits inside the firmware's range for this
+// laptop and Wi-Fi power save on or off.
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.policykit.exec" &&
+        action.lookup("program") == "/usr/local/libexec/rog-deck-power" &&
+        subject.user == "$2" && subject.local && subject.active) {
+        return polkit.Result.YES;
+    }
+});
+RULE
+chmod 0644 "$tmp"
+mv -f "$tmp" /etc/polkit-1/rules.d/49-rog-deck-power.rules
+"""
+POWER_UNINSTALL_SCRIPT = r"""
+[ -x /usr/local/libexec/rog-deck-power ] && /usr/local/libexec/rog-deck-power reset || true
+rm -f /etc/polkit-1/rules.d/49-rog-deck-power.rules /usr/local/libexec/rog-deck-power /run/rog-deck-power.json
+"""
+# The Hyprland monitor profile ROG Deck keeps for the laptop screen on its
+# own, so hyprmoncfgd has an exact match to hold the refresh rate in.
+LAPTOP_PROFILE = "Laptop"
 
 # Display order for the mode tiles, quietest first.
 PROFILE_ORDER = ["power-saver", "balanced", "performance"]
@@ -270,9 +315,13 @@ def aura_path(objects=None):
 
 # ---------------------------------------------------------------- status
 
-def profile_status(platform=None):
-    ppd = get_all("/org/freedesktop/UPower/PowerProfiles", "org.freedesktop.UPower.PowerProfiles",
-                  "org.freedesktop.UPower.PowerProfiles") or {}
+def ppd_props():
+    return get_all("/org/freedesktop/UPower/PowerProfiles", "org.freedesktop.UPower.PowerProfiles",
+                   "org.freedesktop.UPower.PowerProfiles") or {}
+
+
+def profile_status(platform=None, ppd=None):
+    ppd = ppd if ppd is not None else ppd_props()
     names = [p.get("Profile") for p in ppd.get("Profiles") or []]
     choices = [name for name in PROFILE_ORDER if name in names]
     platform = platform if platform is not None else (get_all(ROOT, "xyz.ljones.Platform") or {})
@@ -474,6 +523,7 @@ def fnlock_status():
 def status():
     objects = asusd_objects()
     platform = get_all(ROOT, "xyz.ljones.Platform")
+    ppd = ppd_props()
     dgpu = dgpu_status()
     temps, watts, fans = sensors(dgpu)
     return {
@@ -482,7 +532,7 @@ def status():
         "asusdVersion": platform.get("Version") if platform else None,
         "model": read("/sys/class/dmi/id/product_name"),
         "ac": on_ac(),
-        "profile": profile_status(platform or {}),
+        "profile": profile_status(platform or {}, ppd),
         "keyboard": keyboard_status(objects),
         "anime": anime_status(objects),
         "armoury": armoury_status(objects),
@@ -494,6 +544,8 @@ def status():
         "display": display_status(),
         "fnlock": fnlock_status(),
         "gpu": gpu_status(),
+        "power": power_status(),
+        "saver": {"screen": screen_saving(ppd), "wifi": wifi_powersave()},
     }
 
 
@@ -724,19 +776,49 @@ def refresh(hz):
     # monitor`; hl.monitor replaces the whole rule, so repeat position and scale.
     act(["hyprctl", "eval", 'hl.monitor({ output = "%s", mode = "%s", position = "%dx%d", scale = %s })'
          % (panel["name"], modes[target], panel["x"], panel["y"], scale)])
-    # hyprmoncfg's daemon re-applies its active profile shortly after any
-    # runtime change; save the profile so the new rate sticks.
-    out = run(["hyprmoncfg", "status", "--json"]) if shutil.which("hyprmoncfg") else None
-    if out:
+    hold_rate(target)
+
+
+def hold_rate(target):
+    """Save the new rate where hyprmoncfgd will keep it.
+
+    The daemon puts the screens back the way the best-matching saved
+    profile has them shortly after any runtime change. With only some of a
+    profile's screens connected (the laptop off its desk) no profile is
+    active, so the daemon falls back to the desk profile and its rate. The
+    laptop screen alone gets a profile of its own for that.
+    """
+    if not shutil.which("hyprmoncfg"):
+        return
+    # Save what Hyprland shows, so wait for the mode switch to land first.
+    for _ in range(30):
+        panel = panel_monitor()
+        if panel and round(panel.get("refreshRate", 0)) == target:
+            break
+        time.sleep(0.1)
+    else:
+        return
+    # hyprmoncfg refuses while the screens are still reconnecting from the switch.
+    info = None
+    for _ in range(10):
         try:
-            info = json.loads(out)
+            info = json.loads(run(["hyprmoncfg", "status", "--json"], timeout=5) or "")
+            break
         except ValueError:
-            info = {}
-        profile = info.get("active_profile")
-        if (info.get("daemon") or {}).get("running") and profile:
-            name = profile.get("name") if isinstance(profile, dict) else profile
-            if name:
-                act(["hyprmoncfg", "save", str(name)])
+            time.sleep(0.3)
+    if not isinstance(info, dict) or not (info.get("daemon") or {}).get("running"):
+        return
+    profile = info.get("active_profile")
+    name = profile.get("name") if isinstance(profile, dict) else profile
+    if not name:
+        monitors = json.loads(run(["hyprctl", "monitors", "all", "-j"]) or "[]")
+        laptop_only = len(monitors) == 1 and monitors[0].get("name", "").startswith("eDP")
+        # Never overwrite a "Laptop" profile someone made with more screens in it.
+        mine = next((p for p in info.get("profiles") or [] if p.get("name") == LAPTOP_PROFILE), None)
+        if laptop_only and (mine is None or mine.get("output_count") == 1):
+            name = LAPTOP_PROFILE
+    if name:
+        act(["hyprmoncfg", "save", str(name)])
 
 
 def fnlock(args):
@@ -746,6 +828,145 @@ def fnlock(args):
     if not tool:
         fail("FN-lock is not set up (no fnlock command)")
     act([tool, args[0]])
+
+
+# ------------------------------------------------ CPU limits, battery saver
+
+def power_module():
+    """bin/rog-deck-power loaded as a module, for its limits table."""
+    import importlib.util
+    from importlib.machinery import SourceFileLoader
+    loader = SourceFileLoader("rog_deck_power", os.path.join(PLUGIN_DIR, "bin", "rog-deck-power"))
+    spec = importlib.util.spec_from_loader("rog_deck_power", loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+def helper_version():
+    """The installed helper's VERSION, read from its source rather than run."""
+    match = re.search(r"^VERSION = (\d+)$", read(POWER_HELPER) or "", re.M)
+    return int(match.group(1)) if match else None
+
+
+def ppt_triple(watts, table):
+    """Sustained at `watts`; the boosts follow it but never below their minimum.
+
+    Model.pptTriple does the same for the panel's caption.
+    """
+    def clamp(value, bounds):
+        return max(bounds[0], min(bounds[1], value))
+    spl = clamp(watts, table["spl"])
+    sppt = clamp(max(watts, spl), table["sppt"])
+    return spl, sppt, clamp(max(watts, sppt), table["fppt"])
+
+
+def power_status():
+    helper = power_module()
+    table = helper.LIMITS.get(helper.board())
+    supported = bool(table) and all(helper.target(key) for key in ("spl", "sppt", "fppt"))
+    installed = helper_version()
+    try:
+        with open(POWER_STATE) as f:
+            applied = json.load(f)
+    except (OSError, ValueError):
+        applied = None
+    current = table["ac" if on_ac() else "dc"] if table else None
+    return {
+        "supported": supported,
+        "helper": "missing" if installed is None else ("outdated" if installed < helper.VERSION else "ok"),
+        "ranges": {key: list(bounds) for key, bounds in current.items()} if current else None,
+        # The slider covers the battery range: past 35 W sustained Silent stops being silent.
+        "slider": list(table["dc"]["spl"]) if table else None,
+        "applied": applied if isinstance(applied, dict) and "spl" in applied else None,
+    }
+
+
+def screen_saving(ppd):
+    """power-profiles-daemon's panel power savings: on in power-saver and balanced on battery."""
+    info = next((a for a in ppd.get("ActionsInfo") or [] if a.get("Name") == "amdgpu_panel_power"), None)
+    level = next((v for v in (read_int(p) for p in glob.glob("/sys/class/drm/card*-eDP-*/amdgpu/panel_power_savings"))
+                  if v is not None), None)
+    return {"available": info is not None, "enabled": bool(info and info.get("Enabled")), "level": level}
+
+
+def wifi_interfaces():
+    return [os.path.basename(os.path.dirname(p)) for p in sorted(glob.glob("/sys/class/net/*/phy80211"))]
+
+
+def wifi_powersave():
+    for name in wifi_interfaces():
+        out = run(["iw", "dev", name, "get", "power_save"])
+        if out and ":" in out:
+            return out.split(":", 1)[1].strip() == "on"
+    return None
+
+
+def root_script(script, args, what):
+    """Run a shell script as root through pkexec, which asks for the password."""
+    try:
+        # Long enough for the password prompt plus a first package download.
+        out = subprocess.run(["pkexec", "/bin/sh", "-c", script, "rog-deck", *args],
+                             capture_output=True, text=True, timeout=600)
+    except FileNotFoundError:
+        fail("pkexec is not installed")
+    except subprocess.TimeoutExpired:
+        fail("timed out waiting for the password prompt")
+    if out.returncode in (126, 127):
+        fail("%s cancelled: no permission" % what)
+    if out.returncode != 0:
+        detail = (out.stderr or out.stdout).strip().splitlines()
+        fail("%s failed: %s" % (what, detail[-1] if detail else "exit %d" % out.returncode))
+
+
+def power_helper(*args):
+    """Run the installed helper as root; its polkit rule needs no password."""
+    if helper_version() is None:
+        fail("the power helper isn't set up: run `rog-deck power setup`")
+    try:
+        out = subprocess.run(["pkexec", POWER_HELPER, *args], capture_output=True, text=True, timeout=20)
+    except FileNotFoundError:
+        fail("pkexec is not installed")
+    except subprocess.TimeoutExpired:
+        fail("the power helper timed out")
+    if out.returncode in (126, 127):
+        fail("no permission to run the power helper; set it up again from the panel")
+    if out.returncode != 0:
+        detail = (out.stderr or out.stdout).strip().splitlines()
+        fail(detail[-1].replace("rog-deck-power: ", "") if detail else "power helper exit %d" % out.returncode)
+
+
+def power(args):
+    if not args:
+        print(json.dumps(power_status(), separators=(",", ":")))
+    elif len(args) == 2 and args[0] == "limit":
+        info = power_status()
+        if not info["supported"]:
+            fail("CPU power limits aren't supported on this laptop")
+        watts = int(args[1])
+        low, high = info["slider"]
+        if not low <= watts <= high:
+            fail("limit must be %d-%d W" % (low, high))
+        power_helper("ppt", *map(str, ppt_triple(watts, power_module().limits())))
+    elif args == ["off"]:
+        power_helper("reset")
+    elif args == ["setup"]:
+        root_script(POWER_SETUP_SCRIPT, [os.path.join(PLUGIN_DIR, "bin", "rog-deck-power"),
+                                         pwd.getpwuid(os.getuid()).pw_name], "power helper setup")
+    elif args == ["uninstall"]:
+        root_script(POWER_UNINSTALL_SCRIPT, [], "power helper removal")
+    else:
+        fail("power | power limit <watts> | power off | power setup | power uninstall")
+
+
+def saver(args):
+    if len(args) != 2 or args[0] not in ("screen", "wifi") or args[1] not in ("on", "off"):
+        fail("saver screen on|off | saver wifi on|off")
+    if args[0] == "screen":
+        act(["powerprofilesctl", "configure-action", "amdgpu_panel_power",
+             "--enable" if args[1] == "on" else "--disable"])
+    else:
+        power_helper("wifi-powersave", args[1])
 
 
 # ------------------------------------------------------------------- gpu
@@ -1076,6 +1297,10 @@ def main(argv):
         refresh(args[0])
     elif command == "fnlock":
         fnlock(args)
+    elif command == "power":
+        power(args)
+    elif command == "saver":
+        saver(args)
     elif command == "gpu":
         gpu(args)
     elif command == "fans":

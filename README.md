@@ -4,7 +4,7 @@
   <p>An Omarchy bar widget and control panel for <b>ASUS ROG</b> laptops, built on <a href="https://asus-linux.org/">asusctl/asusd</a>:<br/>
   power modes, temperatures and fans, keyboard lighting with auto-off, AniMe Matrix, FN-lock, battery limit and Battery saver, a CPU power limit for Silent, display and GPU mode.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v0.8.1-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v0.8.2-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-ff8f6b" />
     <img alt="asusd 6" src="https://img.shields.io/badge/asusd-6-ff8f6b" />
     <a href="https://github.com/T3lluz/omarchy-rog-deck/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-rog-deck/actions/workflows/ci.yml/badge.svg" /></a>
@@ -100,7 +100,7 @@ o.bind("XF86Launch4", "Next power mode", "omarchy-shell io.github.t3lluz.rog-dec
 Details that matter:
 
 - **Effect changes.** The keyboard can keep animating an old effect while asusd reports the new one, so `rog-deck aura` blanks the keyboard, writes the effect, then re-sends the power state and brightness.
-- **Refresh rate.** Hyprland 0.56's Lua config rejects `hyprctl keyword monitor`, so the rate goes through `hyprctl eval "hl.monitor({...})"`. hyprmoncfg's daemon puts the screens back the way its best-matching profile has them after any change, so the new rate is saved into the active profile. With the laptop off its desk no profile is active and the daemon falls back to the desk profile and its rate; ROG Deck then keeps a "Laptop" profile with just the built-in screen, which the daemon matches exactly. A profile with only some of a desk's screens isn't made for you: save that layout once in hyprmoncfg and the rate sticks there too.
+- **Refresh rate.** Hyprland 0.56's Lua config rejects `hyprctl keyword monitor`, so the rate goes through `hyprctl eval "hl.monitor({...})"`, naming the panel by its description because a rule for the connector name would inherit `disabled` from a leftover Omarchy clamshell flag. hyprmoncfg's daemon puts the screens back the way its best-matching profile has them after any change, so the new rate is saved into the active profile. With the laptop off its desk no profile is active and the daemon falls back to the desk profile and its rate; ROG Deck then keeps a "Laptop" profile with just the built-in screen, which the daemon matches exactly. A profile with only some of a desk's screens isn't made for you: save that layout once in hyprmoncfg and the rate sticks there too.
 - **CPU limits.** The same three ASUS ACPI limits G-Helper sets on this laptop (sustained `0x1200A3`, slow boost `0x1200A0`, fast boost `0x1200C1`), through the kernel's asus-nb-wmi attributes. The firmware doesn't report them back, so the panel shows what was last written. On a GA402NV on battery, a full-load test with 15 W held about 15–25 W at 75 °C; without the custom fan curve the same writes did nothing (33 W, 95 °C).
 - **GPU readings.** `nvidia-smi` is only asked while the dGPU is already awake.
 - **GPU modes.** The running mode comes from the hardware: no NVIDIA card (or one parked on vfio-pci) is Integrated, an NVIDIA card driving the eDP panel is Dedicated. asusd queues `gpu_mux_mode` writes (`QueuedGpuValue`) for its `asus-shutdown` helper, so the mode after restart is read from that queue plus supergfxd's config. A queued `dgpu_disable=1` from an earlier version is cancelled. The restart is `omarchy-system-reboot`.

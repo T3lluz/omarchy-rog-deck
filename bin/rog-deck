@@ -763,6 +763,23 @@ def armoury(args):
     act(["asusctl", "armoury", "set", name, str(int(value))])
 
 
+def monitor_output(panel):
+    """The `output` to name in a Hyprland monitor rule for the panel.
+
+    hl.monitor merges into any rule for the same output. Omarchy's clamshell
+    flag is a rule for the connector name with `disabled = true`, and it can
+    outlive the closed lid: hyprmoncfgd keeps Omarchy's watcher stopped, and
+    that watcher is what clears a flag the lid-open bind missed. A rule for the
+    connector then inherits `disabled` and blanks the panel. hyprmoncfg writes
+    its rule for the description, so use that one too. The description goes
+    into Lua source, so anything but plain text falls back to the connector.
+    """
+    description = panel.get("description") or ""
+    if re.fullmatch(r"[\w .,()+/-]+", description):
+        return "desc:" + description
+    return panel["name"]
+
+
 def refresh(hz):
     panel = panel_monitor()
     if not panel:
@@ -778,7 +795,7 @@ def refresh(hz):
     # Hyprland 0.56 reads a Lua config, which rejects `hyprctl keyword
     # monitor`; hl.monitor replaces the whole rule, so repeat position and scale.
     act(["hyprctl", "eval", 'hl.monitor({ output = "%s", mode = "%s", position = "%dx%d", scale = %s })'
-         % (panel["name"], modes[target], panel["x"], panel["y"], scale)])
+         % (monitor_output(panel), modes[target], panel["x"], panel["y"], scale)])
     hold_rate(target)
 
 

@@ -140,6 +140,10 @@ function defaultSettings() {
     saver: { enabled: false, screen: true, wifi: true, overdriveAc: null },
     // Silent's CPU limit in watts, applied only while Silent is active.
     powerLimit: { enabled: false, watts: 15 },
+    // Full speed on the charger in Balanced: the CPU's performance energy
+    // preference. Needs the helper, so it is on by default but does nothing
+    // until that is set up.
+    fullSpeed: { enabled: true },
     updates: { autoCheck: true }
   }
 }
@@ -350,6 +354,44 @@ function limitApplied(applied, triple, onAc) {
     && applied.fppt === triple.fppt && applied.ac === onAc
 }
 
+// Full speed holds on the charger in Balanced. Turbo's performance governor
+// already holds the CPU there, and Silent and the battery keep the energy
+// preference power-profiles-daemon picks.
+function speedWanted(settings, profile, onAc) {
+  var speed = settings && settings.fullSpeed
+  return !!speed && speed.enabled === true && !!onAc && profile === "balanced"
+}
+
+// What to run for the current mode and charger: "on" to put full speed in
+// place, "off" to hand back what an earlier "on" set, "" for nothing.
+// speed is the status's: the CPU's energy preference (null where the driver
+// has none, "mixed" after a write that stopped partway) and whether ROG Deck
+// holds it. A performance preference nobody holds also gets "on":
+// power-profiles-daemon never picks it for Balanced, so it is treated as ROG
+// Deck's from before a logout, and claiming it is what lets a later "off"
+// hand it back.
+function speedPlan(settings, profile, onAc, speed) {
+  if (!speed || !speed.epp) return ""
+  if (speedWanted(settings, profile, onAc)) return speed.epp !== "performance" || !speed.held ? "on" : ""
+  return speed.held ? "off" : ""
+}
+
+// The switch's caption. helper: "ok", "missing" or "outdated". Without a
+// working helper the switch shows off whatever is saved, and a click sets
+// the helper up. epp: the CPU's energy preference now, so "On now" is only
+// said when it is.
+function speedHint(enabled, helper, onAc, epp) {
+  var does = "On the charger, the CPU clocks up at once, as in Turbo, instead of ramping"
+  if (helper !== "ok") {
+    if (!enabled) return does + ". Asks for your password once"
+    return helper === "outdated" ? "Off until ROG Deck's power helper is updated. Click to update it. Asks for your password once"
+                                 : "Off until ROG Deck's power helper is set up. Click to set it up. Asks for your password once"
+  }
+  if (!enabled) return does
+  if (!onAc) return "Waiting for the charger. On battery the mode's own setting applies"
+  return epp === "performance" ? "On now. The CPU clocks up at once instead of ramping" : does
+}
+
 // ----------------------------------------------------------------- fans
 
 var FAN_PRESETS = [
@@ -467,10 +509,11 @@ function batteryGpuNotice(gpu, next, onBattery, saver) {
 }
 
 // The banner asking to install or update the power helper, or null.
-function powerHelperNotice(power, wanted) {
-  if (!wanted || !power || !power.supported || power.helper === "ok") return null
+// anyModel: what wants the helper works without a CPU limit table (full speed).
+function powerHelperNotice(power, wanted, anyModel) {
+  if (!wanted || !power || (!power.supported && !anyModel) || power.helper === "ok") return null
   return { key: "power-helper", tone: "accent", icon: "󰌾", action: "power-setup", actionLabel: "Set up",
            text: power.helper === "outdated"
              ? "ROG Deck's power helper needs an update. It asks for your password once"
-             : "The CPU limit and Wi-Fi power save need ROG Deck's power helper. It asks for your password once" }
+             : "The CPU limit, Wi-Fi power save and full speed need ROG Deck's power helper. It asks for your password once" }
 }

@@ -12,6 +12,8 @@ the firmware's limits for this exact laptop and power source.
   rog-deck-power reset                     hand the CPU limits back to the firmware
   rog-deck-power wifi-powersave on|off
   rog-deck-power panel-power <0-4>         amdgpu panel power savings: 0 off, 4 strongest
+  rog-deck-power epp <preference>          how eagerly the CPU clocks up: performance,
+                                           balance_performance, balance_power or power
 """
 
 import glob
@@ -23,7 +25,7 @@ import sys
 
 sys.dont_write_bytecode = True
 
-VERSION = 2
+VERSION = 3
 STATE = "/run/rog-deck-power.json"
 IW = "/usr/bin/iw"
 
@@ -50,6 +52,10 @@ TARGETS = {
 }
 POLICY = LEGACY + "/throttle_thermal_policy"
 PANEL_POWER = "/sys/class/drm/card*-eDP-*/amdgpu/panel_power_savings"
+# The CPU's energy preference, one file per core: the hint amd-pstate and
+# intel_pstate pass to the firmware for how fast to clock up.
+EPP_PATHS = "/sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference"
+EPP = ("performance", "balance_performance", "balance_power", "power")
 
 
 class Failure(Exception):
@@ -180,6 +186,21 @@ def panel_power(args):
         write(path, args[0])
 
 
+def epp(args):
+    if len(args) != 1 or args[0] not in EPP:
+        raise Failure("epp " + "|".join(EPP))
+    paths = sorted(glob.glob(EPP_PATHS))
+    if not paths:
+        raise Failure("this CPU driver has no energy preference")
+    for path in paths:
+        current = read(path)
+        # Skipped: a core that is offline (it can be neither read nor
+        # written), and one already there, which keeps this quiet under the
+        # performance governor, where the kernel refuses preference writes.
+        if current is not None and current != args[0]:
+            write(path, args[0])
+
+
 def main(argv):
     if argv == ["version"]:
         print(VERSION)
@@ -191,8 +212,11 @@ def main(argv):
         wifi_powersave(argv[1:])
     elif argv and argv[0] == "panel-power":
         panel_power(argv[1:])
+    elif argv and argv[0] == "epp":
+        epp(argv[1:])
     else:
-        raise Failure("version | ppt <spl> <sppt> <fppt> | reset | wifi-powersave on|off | panel-power <0-4>")
+        raise Failure("version | ppt <spl> <sppt> <fppt> | reset | wifi-powersave on|off | panel-power <0-4>"
+                      " | epp <preference>")
 
 
 if __name__ == "__main__":

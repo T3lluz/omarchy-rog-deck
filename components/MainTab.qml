@@ -20,6 +20,13 @@ Column {
   readonly property var limit: service ? service.settings.powerLimit : ({ enabled: false, watts: 15 })
   readonly property bool limitShown: !!power && power.supported && !!power.slider && deck.activeProfile === "power-saver"
   readonly property var limitTriple: limitShown ? Model.pptTriple(Model.powerLimitWatts({ powerLimit: { enabled: true, watts: limit.watts } }, "power-saver", power), power.ranges) : null
+  // Full speed on the charger, shown in Balanced, the one mode it changes.
+  readonly property var speed: status && status.speed ? status.speed : null
+  readonly property string speedHelper: power ? power.helper : "missing"
+  readonly property bool speedEnabled: !!service && service.settings.fullSpeed.enabled
+  readonly property bool speedShown: !!speed && !!speed.epp && deck.activeProfile === "balanced"
+  // The charger as the service sees it, so the caption and what is applied agree.
+  readonly property bool onAc: !!service && !service.onBattery
   // Whether the running mode uses its own fan curve (Fans tab).
   readonly property string curveNote: {
     var curves = service ? service.fanCurves : null
@@ -102,6 +109,20 @@ Column {
       fontFamily: tab.deck.fontFamily
       onCommitted: function(v) { tab.service.setPowerLimit(true, Math.round(v)) }
     }
+  }
+
+  SwitchRow {
+    width: parent.width
+    visible: tab.speedShown
+    icon: "󱓞"
+    label: "Full speed when plugged in"
+    hint: Model.speedHint(tab.speedEnabled, tab.speedHelper, tab.onAc, tab.speed ? tab.speed.epp : null)
+    // Shown as it acts: off without a working helper, whatever is saved.
+    // A click then saves "on" and sets the helper up.
+    checked: tab.speedEnabled && tab.speedHelper === "ok"
+    foreground: tab.deck.fg
+    fontFamily: tab.deck.fontFamily
+    onToggled: tab.service.setFullSpeed(!checked)
   }
 
   PanelSeparator { foreground: tab.deck.fg }

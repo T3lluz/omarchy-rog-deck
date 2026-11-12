@@ -7,7 +7,8 @@ system bus, power-profiles-daemon (via omarchy-powerprofiles-set), logind
 `fnlock` tool, which carries its own sudoers rule. The root steps go through
 pkexec: Integrated GPU mode (installing supergfxctl the first time and
 writing /etc/supergfxd.conf), and installing the power helper
-(bin/rog-deck-power) that sets CPU power limits and Wi-Fi power save.
+(bin/rog-deck-power) that sets CPU power limits, Wi-Fi power save and the
+CPU's energy preference.
 
   rog-deck status                          one JSON snapshot of everything the panel shows
   rog-deck profile <name|next|prev>        set the power mode for the current power source
@@ -37,6 +38,8 @@ writing /etc/supergfxd.conf), and installing the power helper
   rog-deck power setup | uninstall         install or remove the root helper and its polkit rule
   rog-deck saver screen <0-4>              panel power savings level (0 off)
   rog-deck saver wifi on|off               Wi-Fi power save
+  rog-deck speed on                        full speed in Balanced on the charger: the CPU's performance energy preference
+  rog-deck speed off                       hand it back to power-profiles-daemon's value
 
   rog-deck gpu                             JSON: running mode, mode after restart, choices
   rog-deck gpu set <integrated|hybrid|dedicated> [--restart]
@@ -124,6 +127,11 @@ POWER_STATE = "/run/rog-deck-power.json"
 # Whether `power limit` switched Silent's custom fan curve on, so `power off`
 # switches it back off. A curve the user turned on stays theirs.
 POWER_OWNER = os.path.join(STATE_HOME, "rog-deck", "power.json")
+# Present while `speed on` holds the energy preference, so `speed off` only
+# hands back a preference ROG Deck set. In the runtime folder: the preference
+# doesn't outlive a restart either.
+SPEED_HELD = os.path.join(RUNTIME, "rog-deck", "speed-held")
+CPU_POLICIES = "/sys/devices/system/cpu/cpufreq/policy*"
 # Run as root through pkexec; $1 is the helper to install, $2 the user the
 # polkit rule lets run it without a password. The helper is copied, never
 # run from the plugin folder: that folder is the user's to write, and a rule
@@ -136,7 +144,8 @@ tmp=/etc/polkit-1/rules.d/.49-rog-deck-power.rules.tmp
 cat > "$tmp" <<RULE
 // ROG Deck: $2, at the laptop, may run its power helper without a password.
 // The helper only takes CPU limits inside the firmware's range for this
-// laptop and Wi-Fi power save on or off.
+// laptop, Wi-Fi power save on or off, and values from short fixed lists for
+// screen power saving and the CPU's energy preference.
 polkit.addRule(function(action, subject) {
     if (action.id == "org.freedesktop.policykit.exec" &&
         action.lookup("program") == "/usr/local/libexec/rog-deck-power" &&
@@ -549,6 +558,7 @@ def status():
         "gpu": gpu_status(),
         "power": power_status(),
         "saver": {"screen": screen_saving(ppd), "wifi": wifi_powersave()},
+        "speed": speed_status(),
     }
 
 
@@ -1017,9 +1027,93 @@ def power(args):
         root_script(POWER_SETUP_SCRIPT, [os.path.join(PLUGIN_DIR, "bin", "rog-deck-power"),
                                          pwd.getpwuid(os.getuid()).pw_name], "power helper setup")
     elif args == ["uninstall"]:
+        # Hand the energy preference back while the helper can still write it.
+        try:
+            speed(["off"])
+        except Failure:
+            pass
         root_script(POWER_UNINSTALL_SCRIPT, [], "power helper removal")
     else:
         fail("power | power limit <watts> | power off | power setup | power uninstall")
+
+
+def cpu_setting(name):
+    """One cpufreq setting across every core: its value, "mixed" when the cores disagree, None without it."""
+    values = {read(os.path.join(policy, name)) for policy in glob.glob(CPU_POLICIES)}
+    values.discard(None)
+    if not values:
+        return None
+    return values.pop() if len(values) == 1 else "mixed"
+
+
+def speed_status():
+    """The CPU's energy preference and whether `speed on` holds it.
+
+    "mixed" is a write that stopped partway; it reads as not yet in place.
+    """
+    return {"epp": cpu_setting("energy_performance_preference"), "held": os.path.exists(SPEED_HELD)}
+
+
+def on_battery():
+    """UPower's answer, the one power-profiles-daemon and the panel go by.
+
+    Sysfs can show a USB-C supply as online while the laptop runs on battery.
+    """
+    props = get_all("/org/freedesktop/UPower", "org.freedesktop.UPower", "org.freedesktop.UPower") or {}
+    battery = props.get("OnBattery")
+    return battery if isinstance(battery, bool) else not on_ac()
+
+
+def ppd_epp(profile, ac):
+    """The energy preference power-profiles-daemon gives a mode on a power source."""
+    if profile == "performance":
+        return "performance"
+    if profile == "power-saver":
+        return "power"
+    return "balance_performance" if ac else "balance_power"
+
+
+def speed(args):
+    now = speed_status()
+    profile = ppd_props().get("ActiveProfile")
+    ac = not on_battery()
+    if args == ["on"]:
+        # Checked again here: the mode or charger may have changed while this
+        # waited in the panel's queue. Balanced only, since Turbo's governor
+        # already holds the preference at performance.
+        if now["epp"] is None or profile != "balanced" or not ac:
+            return
+        if power_status()["helper"] != "ok":
+            fail("the power helper isn't set up or is out of date: run `rog-deck power setup`")
+        # Noted first, so a write that fails partway still gets handed back.
+        # power-profiles-daemon never picks performance for Balanced, so one
+        # already in place is treated as ROG Deck's (left by a logout) and
+        # claimed. At worst the hand-back writes the daemon's own value.
+        os.makedirs(os.path.dirname(SPEED_HELD), exist_ok=True)
+        open(SPEED_HELD, "w").close()
+        if now["epp"] != "performance":
+            power_helper("epp", "performance")
+    elif args == ["off"]:
+        # Without an answer from power-profiles-daemon there is no telling
+        # which value to hand back. Keep the note for the next trigger.
+        if profile not in PROFILE_ORDER:
+            return
+        # power-profiles-daemon writes its own preference on a mode or charger
+        # change, so this only has work left when it didn't.
+        back = ppd_epp(profile, ac)
+        if now["held"] and now["epp"] in ("performance", "mixed") and back != "performance":
+            # Something else (gamemode, cpupower) holds the performance
+            # governor, and under it the kernel refuses the write. Keep the
+            # note and try again on the next mode or charger change.
+            if cpu_setting("scaling_governor") != "powersave":
+                return
+            power_helper("epp", back)
+        try:
+            os.remove(SPEED_HELD)
+        except FileNotFoundError:
+            pass
+    else:
+        fail("speed on|off")
 
 
 def saver(args):
@@ -1366,6 +1460,8 @@ def main(argv):
         power(args)
     elif command == "saver":
         saver(args)
+    elif command == "speed":
+        speed(args)
     elif command == "gpu":
         gpu(args)
     elif command == "fans":

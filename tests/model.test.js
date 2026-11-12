@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, gpuModes, gpuModeInfo, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, formatSeconds, barParts, BAR_STATS, PROFILES, gpuConfirmText, gpuNotice, saverOverdrive, pptTriple, powerLimitWatts, limitCaption, limitApplied, batteryGpuNotice, powerHelperNotice, screenLevel }")()
+const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, gpuModes, gpuModeInfo, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, formatSeconds, barParts, BAR_STATS, PROFILES, gpuConfirmText, gpuNotice, saverOverdrive, pptTriple, powerLimitWatts, limitCaption, limitApplied, batteryGpuNotice, powerHelperNotice, screenLevel, speedWanted, speedPlan, speedHint }")()
 
 // Trimmed from a real `bin/rog-deck status` on a GA402NV.
 const status = {
@@ -241,5 +241,60 @@ assert.strictEqual(Model.powerHelperNotice({ supported: true, helper: "missing" 
 assert.strictEqual(Model.powerHelperNotice({ supported: false, helper: "missing" }, true), null)
 
 // Update wording and banners are the panel kit's: tests/update.test.js.
+
+
+// Full speed: on the charger in Balanced. Turbo's governor already does it; Silent and battery keep their own.
+const speedOn = { fullSpeed: { enabled: true } }
+assert.deepStrictEqual(Model.defaultSettings().fullSpeed, { enabled: true })
+assert.strictEqual(Model.mergeSettings('{"fullSpeed":{"enabled":false}}').fullSpeed.enabled, false)
+assert.strictEqual(Model.speedWanted(speedOn, "balanced", true), true)
+assert.strictEqual(Model.speedWanted(speedOn, "performance", true), false)
+assert.strictEqual(Model.speedWanted(speedOn, "power-saver", true), false)
+assert.strictEqual(Model.speedWanted(speedOn, "balanced", false), false)
+assert.strictEqual(Model.speedWanted({ fullSpeed: { enabled: false } }, "balanced", true), false)
+assert.strictEqual(Model.speedWanted({}, "balanced", true), false)
+
+// Wanted: "on" until the preference is there and held.
+assert.strictEqual(Model.speedPlan(speedOn, "balanced", true, { epp: "balance_performance", held: false }), "on")
+assert.strictEqual(Model.speedPlan(speedOn, "balanced", true, { epp: "balance_power", held: true }), "on",
+  "power-profiles-daemon wrote its own again")
+assert.strictEqual(Model.speedPlan(speedOn, "balanced", true, { epp: "mixed", held: true }), "on",
+  "a write that stopped partway")
+assert.strictEqual(Model.speedPlan(speedOn, "balanced", true, { epp: "performance", held: false }), "on",
+  "left in place by a logout: claimed again so it can be handed back")
+assert.strictEqual(Model.speedPlan(speedOn, "balanced", true, { epp: "performance", held: true }), "")
+// A CPU driver with no energy preference: nothing to do either way.
+assert.strictEqual(Model.speedPlan(speedOn, "balanced", true, { epp: null, held: false }), "")
+assert.strictEqual(Model.speedPlan(speedOn, "balanced", false, { epp: null, held: true }), "")
+assert.strictEqual(Model.speedPlan(speedOn, "balanced", true, null), "")
+// Not wanted: "off" only for a preference an earlier "on" set.
+assert.strictEqual(Model.speedPlan(speedOn, "balanced", false, { epp: "performance", held: true }), "off")
+assert.strictEqual(Model.speedPlan(speedOn, "power-saver", true, { epp: "power", held: true }), "off")
+assert.strictEqual(Model.speedPlan(speedOn, "performance", true, { epp: "performance", held: true }), "off",
+  "Turbo holds it itself, so the note is dropped")
+assert.strictEqual(Model.speedPlan(speedOn, "performance", true, { epp: "performance", held: false }), "")
+assert.strictEqual(Model.speedPlan({ fullSpeed: { enabled: false } }, "balanced", true, { epp: "performance", held: true }), "off")
+assert.strictEqual(Model.speedPlan(null, "balanced", true, { epp: "performance", held: true }), "off",
+  "no working helper: planned as switched off, so what is held goes back")
+assert.strictEqual(Model.speedPlan(null, "balanced", true, { epp: "balance_performance", held: false }), "")
+assert.strictEqual(Model.speedPlan(speedOn, "balanced", false, { epp: "performance", held: false }), "",
+  "a preference someone else set is left alone")
+
+const speedDoes = "On the charger, the CPU clocks up at once, as in Turbo, instead of ramping"
+assert.strictEqual(Model.speedHint(true, "ok", true, "performance"), "On now. The CPU clocks up at once instead of ramping")
+assert.strictEqual(Model.speedHint(true, "ok", true, "balance_power"), speedDoes, "not in place yet, so not claimed")
+assert.strictEqual(Model.speedHint(true, "ok", false, "balance_power"), "Waiting for the charger. On battery the mode's own setting applies")
+assert.strictEqual(Model.speedHint(false, "ok", true, "balance_performance"), speedDoes)
+assert.strictEqual(Model.speedHint(false, "missing", true, "balance_performance"), speedDoes + ". Asks for your password once")
+// Saved on without a working helper: the switch shows off and says why.
+assert.strictEqual(Model.speedHint(true, "missing", true, "balance_performance"),
+  "Off until ROG Deck's power helper is set up. Click to set it up. Asks for your password once")
+assert.strictEqual(Model.speedHint(true, "outdated", true, "balance_performance"),
+  "Off until ROG Deck's power helper is updated. Click to update it. Asks for your password once")
+assert.ok(Model.powerHelperNotice({ supported: true, helper: "missing" }, true).text.indexOf("full speed") !== -1)
+// A laptop without a CPU limit table is only asked when full speed wants the helper.
+assert.strictEqual(Model.powerHelperNotice({ supported: false, helper: "outdated" }, true), null)
+assert.ok(Model.powerHelperNotice({ supported: false, helper: "outdated" }, true, true).text.indexOf("update") !== -1)
+assert.strictEqual(Model.powerHelperNotice({ supported: false, helper: "ok" }, true, true), null)
 
 console.log("model tests passed")

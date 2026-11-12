@@ -113,7 +113,8 @@ Panel {
     } else if (notice.action === "integrated") {
       service.askGpuMode("integrated")
     } else if (notice.action === "power-setup") {
-      service.ensureHelper()
+      // Full speed wants the helper on models without a CPU limit table too.
+      service.ensureHelper(service.settings.fullSpeed.enabled && service.speedCapable)
     }
   }
 

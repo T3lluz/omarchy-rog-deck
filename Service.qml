@@ -11,8 +11,8 @@ import "components"
 // actions through bin/rog-deck, keeps the settings file, and does the jobs
 // that must happen with the panel closed: keyboard auto-off, putting FN-lock
 // back after login, following the charger for the Auto refresh rate and
-// Battery saver, holding Silent's CPU limit, and re-applying the keyboard
-// effect after a theme change.
+// Battery saver, holding Silent's CPU limit and full speed on the charger,
+// and re-applying the keyboard effect after a theme change.
 // It also answers `omarchy-shell io.github.t3lluz.rog-deck …`.
 Item {
   id: root
@@ -61,6 +61,8 @@ Item {
   // what the last applyPower saw (null until the first one after the shell
   // starts); saverSince is when that last changed.
   readonly property bool saverActive: settingsLoaded && settings.saver.enabled && UPower.onBattery
+  // The charger as the power jobs here see it, for captions that describe them.
+  readonly property bool onBattery: UPower.onBattery
   property var lastSaverActive: null
   property real saverSince: 0
   // applyPower runs on a fresh status: a trigger asks for one and the reply
@@ -216,7 +218,24 @@ Item {
       powerRecheck.restart()
     }
     applyLimit(force || recheck)
+    applySpeed()
   }
+
+  // Full speed on the charger in Balanced. power-profiles-daemon writes its
+  // own energy preference on every mode and charger change, which is why
+  // this runs after those have settled; the plan compares with the status,
+  // so a second run changes nothing. Handing back also runs with an outdated
+  // helper: nothing can be held without one that knows the command.
+  function applySpeed() {
+    var helper = status && status.power ? status.power.helper : ""
+    // Without a working helper the switch shows off, so plan as if it were:
+    // a preference still held is handed back, as the caption says.
+    var plan = Model.speedPlan(helper === "ok" ? settings : null, status && status.profile ? status.profile.active : "", !UPower.onBattery, status ? status.speed : null)
+    if ((plan === "on" && helper === "ok") || (plan === "off" && (helper === "ok" || helper === "outdated"))) run(["speed", plan])
+  }
+
+  // Whether this CPU has an energy preference for full speed to set.
+  readonly property bool speedCapable: !!status && !!status.speed && !!status.speed.epp
 
   // Silent's CPU limit. The firmware loads each mode's own limits on a mode
   // change or a plug/unplug and doesn't report them, so after those (force)
@@ -261,10 +280,24 @@ Item {
     schedulePower(false)
   }
 
+  function setFullSpeed(on) {
+    saveSetting(["fullSpeed", "enabled"], on)
+    if (on && speedCapable) ensureHelper(true)
+    schedulePower(false)
+    // And once more after: a status read while an earlier on or off was
+    // still running would plan from the state before it landed.
+    powerRecheck.restart()
+  }
+
   // The first use installs the root helper; pkexec asks for the password.
-  function ensureHelper() {
+  // Full speed needs no CPU limit table, so it sets the helper up on any model.
+  function ensureHelper(anyModel) {
     var power = status ? status.power : null
-    if (power && power.supported && power.helper !== "ok") run(["power", "setup"])
+    if (!power || !(power.supported || anyModel) || power.helper === "ok") return
+    // One password prompt, however often the switch is clicked meanwhile.
+    function isSetup(action) { return action[1] === "power" && action[2] === "setup" }
+    if ((actionProc.running && isSetup(currentAction)) || actionQueue.some(isSetup)) return
+    run(["power", "setup"])
   }
 
   // ------------------------------------------------------------- settings
@@ -497,8 +530,12 @@ Item {
     if (gpuNotice) list.push(gpuNotice)
     var batteryGpu = Model.batteryGpuNotice(gpu, gpuNext, UPower.onBattery, settingsLoaded && settings.saver.enabled)
     if (batteryGpu) list.push(batteryGpu)
-    var helper = Model.powerHelperNotice(status ? status.power : null,
-                                         settingsLoaded && (settings.saver.enabled || settings.powerLimit.enabled))
+    // Full speed is on by default, so it only asks for a helper that is
+    // already there and out of date, never for a first install. It needs no
+    // CPU limit table, so it asks on any model.
+    var power = status ? status.power : null
+    var speedWants = settingsLoaded && settings.fullSpeed.enabled && speedCapable && !!power && power.helper === "outdated"
+    var helper = Model.powerHelperNotice(power, settingsLoaded && (settings.saver.enabled || settings.powerLimit.enabled || speedWants), speedWants)
     if (helper) list.push(helper)
     if (updaterItem.notice) list.push(updaterItem.notice)
     return list.filter(function(n) { return dismissed[n.key] !== n.text })
@@ -738,6 +775,14 @@ Item {
       if (!root.settingsLoaded) return "not ready"
       if (state === "toggle") root.setSaver(!root.settings.saver.enabled)
       else if (state === "on" || state === "off") root.setSaver(state === "on")
+      else return "unknown"
+      return "ok"
+    }
+    // Full speed on the charger: on, off or toggle.
+    function fullSpeed(state: string): string {
+      if (!root.settingsLoaded) return "not ready"
+      if (state === "toggle") root.setFullSpeed(!root.settings.fullSpeed.enabled)
+      else if (state === "on" || state === "off") root.setFullSpeed(state === "on")
       else return "unknown"
       return "ok"
     }

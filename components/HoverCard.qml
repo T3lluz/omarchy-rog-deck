@@ -85,11 +85,13 @@ PopupWindow {
       width: parent.width - x * 2
       spacing: Style.space(3)
 
+      // By count, so a refresh while the card is up changes values in place.
       Repeater {
-        model: card.rows
+        model: card.rows.length
 
         HoverRow {
-          required property var modelData
+          required property int index
+          readonly property var modelData: card.rows[index] || ({})
           width: list.width
           entry: modelData
           tone: card.toneOf(modelData.tone)

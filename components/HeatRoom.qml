@@ -12,6 +12,14 @@ Room {
 
   readonly property var status: host.status
   readonly property var parts: Model.fanParts(status)
+  // The cells are kept while the parts stay the same, so a refresh moves
+  // their meters and figures instead of building them again from empty.
+  property var partKeys: []
+  onPartsChanged: {
+    var keys = parts.map(function(p) { return p.key })
+    if (keys.join() !== partKeys.join()) partKeys = keys
+  }
+  Component.onCompleted: partKeys = parts.map(function(p) { return p.key })
 
   tone: host.toneOf("heat")
   expanded: host.openRoom === "heat"
@@ -48,15 +56,15 @@ Room {
 
     Repeater {
       id: partRepeater
-      model: room.parts
+      model: room.partKeys
 
       Column {
         id: part
-        required property var modelData
         required property int index
+        readonly property var modelData: room.parts[index] || ({ key: "", label: "", icon: "", temp: null, state: "", hot: false })
         readonly property alias meter: partMeter
         readonly property bool known: Rooms.hasLevel(modelData.temp)
-        width: (partRow.width - partRow.spacing * (room.parts.length - 1)) / Math.max(1, room.parts.length)
+        width: (partRow.width - partRow.spacing * (room.partKeys.length - 1)) / Math.max(1, room.partKeys.length)
         spacing: Style.space(4)
 
         // The part's own icon, the chip or the graphics card, beside its

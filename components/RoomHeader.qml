@@ -138,12 +138,20 @@ Item {
     }
   }
 
+  Counter {
+    id: count
+    host: head.host
+    value: head.showFigure ? head.value : null
+    delay: head.delay
+  }
+
   BigFigure {
     id: figure
     visible: head.showFigure
     anchors.right: parent.right
     y: Math.round((head.naturalHeight - implicitHeight) / 2)
-    value: head.value
+    // Slides to a new reading rather than jumping to it.
+    value: count.known ? count.shown : null
     suffix: head.suffix
     tone: head.tone
     foreground: head.host.fg

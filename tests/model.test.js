@@ -172,8 +172,8 @@ for (const entry of manifest.barWidget.schema) assert.strictEqual(manifest.barWi
 // Each mode has the glyph Omarchy's power menu gives it: leaf, gauge, speedometer.
 assert.deepStrictEqual(Model.PROFILES.map(p => p.label), ["Silent", "Balanced", "Turbo"])
 assert.deepStrictEqual(Model.PROFILES.map(p => p.icon.codePointAt(0)), [0xf032a, 0xf029a, 0xf04c5])
-// In pixels: a CPU whose core grows with the mode.
-assert.deepStrictEqual(Model.PROFILES.map(p => p.pixel), ["cpu-silent", "cpu-balanced", "cpu-turbo"])
+// In pixels: the leaf, then a dial whose needle swings from upright to fast.
+assert.deepStrictEqual(Model.PROFILES.map(p => p.pixel), ["leaf", "speed-medium", "speed-fast"])
 
 // ---- rooms
 

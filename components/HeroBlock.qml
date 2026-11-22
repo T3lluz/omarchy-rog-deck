@@ -22,6 +22,12 @@ Item {
   // Lines the prompt always keeps room for, so one wrapping as it changes
   // moves nothing. The rooms page keeps its lines short enough for one.
   property int keepLines: 2
+  // Which line this is, apart from its numbers. A new key types the line
+  // out; the same line with a new reading in it ("CPU at 95°") just swaps,
+  // so a refresh never retypes the prompt. Empty: any change types.
+  property string lineKey: ""
+  property string typedKey: ""
+  property int typedLength: 0
   default property alias actions: actionRow.children
 
   property int typed: 0
@@ -34,11 +40,24 @@ Item {
   implicitHeight: Math.max(mark.height, labels.implicitHeight)
 
   function arrive() {
+    typedKey = lineKey
+    typedLength = line.length
     typed = Style.reduceMotion ? line.length : 0
     tick++
   }
 
-  onLineChanged: typed = instant || Style.reduceMotion ? line.length : 0
+  onLineChanged: Qt.callLater(hero.retype)
+  onLineKeyChanged: Qt.callLater(hero.retype)
+
+  function retype() {
+    var same = lineKey !== "" && lineKey === typedKey
+    var done = typed >= typedLength
+    typedKey = lineKey
+    typedLength = line.length
+    if (instant || Style.reduceMotion) typed = line.length
+    else if (same) typed = done ? line.length : Math.min(typed, line.length)
+    else typed = 0
+  }
   onInstantChanged: if (instant) typed = line.length
   onTickChanged: if (!Style.reduceMotion) storyRun.restart()
   // A page coming into view types its line out and plays its mark again.

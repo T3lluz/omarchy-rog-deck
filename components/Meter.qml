@@ -100,7 +100,16 @@ Item {
     settle.stop()
     if (Style.reduceMotion || !known) { shown = known ? level : 0; return }
     shown = 0
+    fillTo.to = level
     fillIn.start()
+  }
+
+  // The target is set as the slide starts: bound, it still held the old
+  // level when the change arrived, and the slide went nowhere.
+  function slide() {
+    settle.stop()
+    settle.to = level
+    settle.start()
   }
 
   // A point in the meter's own coordinates. Only near the body presses.
@@ -125,27 +134,32 @@ Item {
     previewed(v)
   }
 
-  Component.onCompleted: shown = known ? level : 0
+  property bool ready: false
 
+  Component.onCompleted: {
+    shown = known ? level : 0
+    ready = true
+  }
+
+  // A new reading slides there; only the panel opening fills from empty.
   onLevelChanged: {
-    if (fillIn.running || dragging) return
+    if (!ready || fillIn.running || dragging) return
     if (Style.reduceMotion || !host.opened) { shown = level; return }
-    settle.restart()
+    slide()
   }
 
   SequentialAnimation {
     id: fillIn
     PauseAnimation { duration: Style.duration(meter.delay) }
-    NumberAnimation { target: meter; property: "shown"; to: meter.level; duration: Style.duration(680); easing.type: Easing.OutCubic }
+    NumberAnimation { id: fillTo; target: meter; property: "shown"; duration: Style.duration(680); easing.type: Easing.OutCubic }
     // The level may have moved on while it filled in.
-    ScriptAction { script: if (meter.shown !== meter.level) settle.restart() }
+    ScriptAction { script: if (meter.shown !== meter.level) meter.slide() }
   }
 
   NumberAnimation {
     id: settle
     target: meter
     property: "shown"
-    to: meter.level
     duration: Style.duration(420)
     easing.type: Easing.OutCubic
   }
@@ -259,7 +273,7 @@ Item {
       var v = meter.dragValue
       meter.dragValue = NaN
       if (!isNaN(v)) meter.committed(v)
-      if (meter.shown !== meter.level) settle.restart()
+      if (meter.shown !== meter.level) meter.slide()
     }
   }
 

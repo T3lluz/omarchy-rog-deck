@@ -20,13 +20,15 @@ Grid {
 
   readonly property real cellWidth: (width - columnSpacing) / 2
 
+  // By count, so a refresh changes the values in place instead of building
+  // the rows again.
   Repeater {
-    model: factGrid.facts
+    model: factGrid.facts.length
 
     Item {
       id: pair
-      required property var modelData
       required property int index
+      readonly property var modelData: factGrid.facts[index] || ({ label: "", value: "" })
       width: factGrid.cellWidth
       implicitHeight: Math.max(pairLabel.implicitHeight, pairValue.implicitHeight)
 

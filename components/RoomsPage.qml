@@ -32,6 +32,7 @@ Column {
       keepLines: 1
       title: "ROG Deck"
       line: page.host.heroLine
+      lineKey: page.host.heroKey
       lineColor: page.host.gpuAsk !== "" || (page.host.status && !page.host.ready) ? page.host.lowTone : Qt.darker(page.host.fg, 1.3)
 
       PixelButton {

@@ -19,10 +19,21 @@ Row {
 
   signal picked(string value)
 
+  // The cells are built again only when the options really change, not each
+  // time a refresh hands over an equal list, so hover and tooltips hold.
+  property var shownOptions: []
+  property string optionsJson: ""
+  onOptionsChanged: {
+    var json = JSON.stringify(options)
+    if (json === optionsJson) return
+    optionsJson = json
+    shownOptions = options
+  }
+
   width: parent ? parent.width : 0
   spacing: Style.space(3)
 
-  readonly property real cellWidth: options.length > 0 ? (width - spacing * (options.length - 1)) / options.length : 0
+  readonly property real cellWidth: shownOptions.length > 0 ? (width - spacing * (shownOptions.length - 1)) / shownOptions.length : 0
   readonly property real rowHeight: {
     var h = 0
     for (var i = 0; i < children.length; i++) if (children[i].naturalHeight !== undefined) h = Math.max(h, children[i].naturalHeight)
@@ -30,7 +41,7 @@ Row {
   }
 
   Repeater {
-    model: choices.options
+    model: choices.shownOptions
 
     Rectangle {
       id: cell

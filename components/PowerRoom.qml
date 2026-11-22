@@ -3,7 +3,7 @@ import qs.Commons
 import "../Model.js" as Model
 import "Rooms.js" as Rooms
 
-// The power mode: its CPU icon, its name over what the charger and the mode's
+// The power mode: its icon, its name over what the charger and the mode's
 // own option are doing, and the package power in the block face. The modes
 // sit in the room as cells, one click each. Opening the room shows what the
 // running mode adds (Silent's CPU limit, Balanced's full speed), what
@@ -42,7 +42,7 @@ Room {
   expanded: host.openRoom === "power"
   onClicked: host.toggleRoom("power")
 
-  // A new mode grows or shrinks the CPU's core, and the icon hops.
+  // A new mode swings the needle: the icon plays its story.
   Connections {
     target: room.host
     function onActiveProfileChanged() { if (room.host.opened) room.story++ }

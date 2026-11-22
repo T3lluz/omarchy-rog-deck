@@ -22,17 +22,44 @@ Item {
   implicitWidth: shape.width * cell
   implicitHeight: shape.height * cell
 
-  Repeater {
-    model: line.shape.rects
+  // Laid from a whole device pixel, as PixelIcon is, so rounding never
+  // doubles a stroke.
+  property real snapX: 0
+  property real snapY: 0
 
-    Rectangle {
-      required property var modelData
-      x: modelData[0] * line.cell
-      y: modelData[1] * line.cell
-      width: modelData[2] * line.cell
-      height: modelData[3] * line.cell
-      color: line.color
-      antialiasing: false
+  function snap() {
+    if (!visible) return
+    var p = line.mapToItem(null, 0, 0)
+    var dx = Math.round(p.x * dpr) / dpr - p.x
+    var dy = Math.round(p.y * dpr) / dpr - p.y
+    if (Math.abs(dx - snapX) > 0.001) snapX = dx
+    if (Math.abs(dy - snapY) > 0.001) snapY = dy
+  }
+
+  Component.onCompleted: snap()
+
+  Connections {
+    target: line.Window.window
+    ignoreUnknownSignals: true
+    function onAfterAnimating() { line.snap() }
+  }
+
+  Item {
+    x: line.snapX
+    y: line.snapY
+
+    Repeater {
+      model: line.shape.rects
+
+      Rectangle {
+        required property var modelData
+        x: modelData[0] * line.px / line.dpr
+        y: modelData[1] * line.px / line.dpr
+        width: modelData[2] * line.px / line.dpr
+        height: modelData[3] * line.px / line.dpr
+        color: line.color
+        antialiasing: false
+      }
     }
   }
 }

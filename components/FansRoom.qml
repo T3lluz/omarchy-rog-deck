@@ -18,7 +18,6 @@ Room {
   readonly property var curve: curves ? curves[host.activeProfile] : null
   readonly property bool custom: curve && service ? !!service.pick("fans." + host.activeProfile, curve.custom) : false
   readonly property var fastest: Model.maxFan(status)
-  readonly property var figure: Model.fanFigure(fastest)
   readonly property real naturalWidth: tile.naturalWidth + pad * 2
 
   tone: host.toneOf("fans")
@@ -33,8 +32,9 @@ Room {
     icon: "fan"
     frames: ["fan", "fan-2"]
     spinEvery: Rooms.spinInterval(room.fastest)
-    figureText: room.figure.text
-    suffix: room.figure.suffix
+    value: room.fastest
+    format: function(v) { return Model.fanFigure(Math.round(v)) }
+    delay: room.delay + 80
     tone: room.tone
     story: Rooms.storyOf("fans")
     tick: room.story

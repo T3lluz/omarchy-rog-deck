@@ -2,8 +2,9 @@
 """
 Build components/Pixels.js, ROG Deck's pixel icons, from Pixelarticons (MIT,
 https://pixelarticons.com), plus the few it lacks, drawn here on the same
-grid in the same weight: the CPU and the three power modes as CPUs, the fan
-(two frames, so it can spin) and the AniMe Matrix's dots. The same pipeline as Batteries and Sonus.
+grid in the same weight: a CPU that reads at twelve pixels, the dials for
+Balanced and Turbo, the fan (two frames, so it can spin) and the AniMe
+Matrix's dots. The same pipeline as Batteries and Sonus.
 
 Pixelarticons are drawn on a 24-unit grid with two-unit strokes. Their SVGs
 are outlines of rectangles, so each icon turns into an exact grid of pixels:
@@ -53,66 +54,54 @@ ICONS = [
 # Drawn here on a 12-cell grid (each cell two units), in Pixelarticons'
 # weight: one-cell lines, corners cut square.
 CUSTOM = {
-    # A CPU, square with three pins a side, in the set's weight: the die an
-    # outline. Pixelarticons' own has cut-off pins and a round die, which at
-    # the bar's twelve pixels reads as a sun.
+    # A CPU that reads at the bar's twelve pixels: a square body, two long
+    # pins a side and a small die, with room between them. Pixelarticons'
+    # own, and a first try with three pins a side and cut corners, packed so
+    # much into twelve pixels that they read as a sun.
     "cpu": [
-        "...#.#.#....",
-        "..#######...",
+        "....#..#....",
+        "....#..#....",
+        "..########..",
+        "..#......#..",
+        "###......###",
+        "..#..##..#..",
+        "..#..##..#..",
+        "###......###",
+        "..#......#..",
+        "..########..",
+        "....#..#....",
+        "....#..#....",
+    ],
+    # Balanced and Turbo (Silent is the leaf, as in Omarchy's power menu): a
+    # dial, its needle upright, then swung to fast. Pixelarticons' speed
+    # icons are half circles, half as tall as the bar's other icons, which
+    # read small and faint beside them; a three-quarter dial fills the square.
+    "speed-medium": [
+        "............",
+        "....###.....",
+        "..##...##...",
+        ".#...#...#..",
+        "#....#....#.",
+        "#....#....#.",
+        "#....#....#.",
+        "#...###...#.",
+        "#.........#.",
         ".#.......#..",
-        "##.#####.##.",
-        ".#.#...#.#..",
-        "##.#...#.##.",
-        ".#.#...#.#..",
-        "##.#####.##.",
-        ".#.......#..",
-        "..#######...",
-        "...#.#.#....",
+        "..#.....#...",
         "............",
     ],
-    # The power modes, a CPU whose core grows with the power it is given:
-    # a dot for Silent, a small core for Balanced, a big one for Turbo. The
-    # bar's icon, so scrolling it shows the core grow and shrink.
-    "cpu-silent": [
-        "...#.#.#....",
-        "..#######...",
-        ".#.......#..",
-        "##.......##.",
-        ".#.......#..",
-        "##...#...##.",
-        ".#.......#..",
-        "##.......##.",
-        ".#.......#..",
-        "..#######...",
-        "...#.#.#....",
+    "speed-fast": [
         "............",
-    ],
-    "cpu-balanced": [
-        "...#.#.#....",
-        "..#######...",
+        "....###.....",
+        "..##...##...",
         ".#.......#..",
-        "##.......##.",
-        ".#..###..#..",
-        "##..###..##.",
-        ".#..###..#..",
-        "##.......##.",
+        "#......#..#.",
+        "#.....#...#.",
+        "#....#....#.",
+        "#...###...#.",
+        "#.........#.",
         ".#.......#..",
-        "..#######...",
-        "...#.#.#....",
-        "............",
-    ],
-    "cpu-turbo": [
-        "...#.#.#....",
-        "..#######...",
-        ".#.......#..",
-        "##.#####.##.",
-        ".#.#####.#..",
-        "##.#####.##.",
-        ".#.#####.#..",
-        "##.#####.##.",
-        ".#.......#..",
-        "..#######...",
-        "...#.#.#....",
+        "..#.....#...",
         "............",
     ],
     # A pinwheel of four teardrop blades round a hub. "fan-2" is the same

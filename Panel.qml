@@ -10,8 +10,8 @@ import "components"
 import "components/Rooms.js" as Rooms
 
 // ROG Deck in the bar, in the Rooms look Batteries and Sonus share. The bar
-// item is the power mode in pixels, a CPU whose core grows with it, plus the
-// readings picked for the bar in the pixel type. Its panel is one page of
+// item is the power mode in pixels (a leaf, then a dial from upright to
+// fast), plus the readings picked for the bar in the pixel type. Its panel is one page of
 // rooms, each tinted in a tone of its own from the theme's palette: the power
 // mode, the CPU and GPU, the fans, the battery, the graphics, the screen, the
 // keyboard light and the AniMe Matrix.
@@ -218,6 +218,18 @@ Panel {
     return list[phraseIndex % list.length]
   }
 
+  // Which line the prompt is on, apart from the numbers in it, so a refresh
+  // swaps a reading in place and only a new line types itself out.
+  readonly property string heroKey: {
+    if (!service || !status) return "reading"
+    if (!ready) return "asusd"
+    if (gpuAsk !== "") return "ask:" + gpuAsk
+    var gpu = status.gpu
+    if (gpu && String(service.pick("gpu.next", gpu.next)) !== gpu.mode) return "restart"
+    if (openRoom !== "") return "room:" + openRoom
+    return "phrase:" + (phraseIndex % Math.max(1, heroPhrases.length))
+  }
+
   Timer {
     interval: 2800
     running: root.opened && root.view === "rooms" && root.openRoom === "" && root.heroPhrases.length > 1
@@ -377,7 +389,7 @@ Panel {
       anchors.centerIn: parent
       spacing: Style.space(5)
 
-      // The mode's CPU: scrolling grows and shrinks its core.
+      // The mode's icon: scrolling swings the dial's needle.
       PixelIcon {
         anchors.verticalCenter: parent.verticalCenter
         name: root.activeInfo.pixel

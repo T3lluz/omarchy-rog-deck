@@ -8,6 +8,9 @@ import "Pixels.js" as Pixels
 // same grid halved (12 cells) where it would not. On a 1.25 scale a 14 px
 // request draws 12 device pixels; a 20 px one draws 24.
 // Never scaled: a fractional scale only ever picks the nearest sharp size.
+// The cells are laid from a whole device pixel: at 1.25 a cell is exactly one
+// device pixel, and from half a pixel off rounding doubled some strokes and
+// dropped others, so a dense icon (the CPU) came out a blob.
 Item {
   id: icon
 
@@ -33,17 +36,44 @@ Item {
   implicitWidth: twelfths * 12 / dpr
   implicitHeight: implicitWidth
 
-  Repeater {
-    model: icon.rects
+  // How far the cells move to start on a whole device pixel, checked before
+  // each frame the window draws (it draws only when something changed).
+  property real snapX: 0
+  property real snapY: 0
 
-    Rectangle {
-      required property var modelData
-      x: modelData[0] * icon.cell
-      y: modelData[1] * icon.cell
-      width: modelData[2] * icon.cell
-      height: modelData[3] * icon.cell
-      color: icon.color
-      antialiasing: false
+  function snap() {
+    if (!visible) return
+    var p = icon.mapToItem(null, 0, 0)
+    var dx = Math.round(p.x * dpr) / dpr - p.x
+    var dy = Math.round(p.y * dpr) / dpr - p.y
+    if (Math.abs(dx - snapX) > 0.001) snapX = dx
+    if (Math.abs(dy - snapY) > 0.001) snapY = dy
+  }
+
+  Component.onCompleted: snap()
+
+  Connections {
+    target: icon.Window.window
+    ignoreUnknownSignals: true
+    function onAfterAnimating() { icon.snap() }
+  }
+
+  Item {
+    x: icon.snapX
+    y: icon.snapY
+
+    Repeater {
+      model: icon.rects
+
+      Rectangle {
+        required property var modelData
+        x: Math.round(modelData[0] * icon.cell * icon.dpr) / icon.dpr
+        y: Math.round(modelData[1] * icon.cell * icon.dpr) / icon.dpr
+        width: Math.round(modelData[2] * icon.cell * icon.dpr) / icon.dpr
+        height: Math.round(modelData[3] * icon.cell * icon.dpr) / icon.dpr
+        color: icon.color
+        antialiasing: false
+      }
     }
   }
 }

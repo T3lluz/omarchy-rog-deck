@@ -31,6 +31,7 @@ Room {
     tone: room.low ? room.host.lowTone : room.tone
     value: room.info.level
     suffix: "%"
+    delay: room.delay + 80
     mark: room.info.mark
     story: Rooms.storyOf("battery")
     tick: room.story

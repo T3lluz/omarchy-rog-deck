@@ -6,12 +6,12 @@
 // power-profiles-daemon names, in tile order, with the names ROG uses. The
 // glyphs are the ones Omarchy's own power menu shows for each profile, so
 // the bar, the panel and the system agree.
-// `pixel` is the mode's pixel icon in the bar and the panel: a CPU whose
-// core grows with the power it is given, so scrolling the bar icon grows it.
+// `pixel` is the mode's pixel icon in the bar and the panel, after the same
+// glyphs: a leaf, then a dial whose needle swings from upright to fast.
 var PROFILES = [
-  { key: "power-saver", label: "Silent", icon: "󰌪", pixel: "cpu-silent", hint: "Quiet fans, low power, longest battery" },
-  { key: "balanced", label: "Balanced", icon: "󰊚", pixel: "cpu-balanced", hint: "Everyday mode" },
-  { key: "performance", label: "Turbo", icon: "󰓅", pixel: "cpu-turbo", hint: "Full CPU and GPU power, louder fans" }
+  { key: "power-saver", label: "Silent", icon: "󰌪", pixel: "leaf", hint: "Quiet fans, low power, longest battery" },
+  { key: "balanced", label: "Balanced", icon: "󰊚", pixel: "speed-medium", hint: "Everyday mode" },
+  { key: "performance", label: "Turbo", icon: "󰓅", pixel: "speed-fast", hint: "Full CPU and GPU power, louder fans" }
 ]
 
 function parseStatus(raw) {
@@ -34,7 +34,7 @@ function normalizeProfile(name) {
 function profileInfo(key) {
   for (var i = 0; i < PROFILES.length; i++)
     if (PROFILES[i].key === key) return PROFILES[i]
-  return { key: key || "", label: key ? key.charAt(0).toUpperCase() + key.slice(1) : "Unknown", icon: "󰊚", pixel: "cpu-balanced", hint: "" }
+  return { key: key || "", label: key ? key.charAt(0).toUpperCase() + key.slice(1) : "Unknown", icon: "󰊚", pixel: "speed-medium", hint: "" }
 }
 
 // The profiles to show as tiles: the daemon's list, in our order.
@@ -101,7 +101,7 @@ function dgpuLabel(state) {
 var GPU_MODES = [
   { value: "integrated", label: "Integrated", icon: "󰌪", pixel: "leaf", hint: "AMD only, NVIDIA powered off. Longest battery" },
   { value: "hybrid", label: "Hybrid", icon: "󰢮", pixel: "gpu", hint: "AMD drives the screen, NVIDIA wakes for games" },
-  { value: "dedicated", label: "Dedicated", icon: "󰓅", pixel: "monitor", hint: "NVIDIA drives the screen directly (MUX). Lowest latency, most power" }
+  { value: "dedicated", label: "Dedicated", icon: "󰓅", pixel: "speed-fast", hint: "NVIDIA drives the screen directly (MUX). Lowest latency, most power" }
 ]
 
 function gpuModes(gpu) {
@@ -758,7 +758,7 @@ function hoverRows(status, ctx) {
 // Every pixel icon this file names, for the test that checks Pixels.js has
 // them all.
 var MODEL_PIXELS = ["thermometer", "gpu", "fan", "cpu", "monitor", "battery", "battery-low", "battery-medium",
-  "battery-full", "zap", "plug", "leaf", "cpu-silent", "cpu-balanced", "cpu-turbo", "snowflake", "wind", "undo",
+  "battery-full", "zap", "plug", "leaf", "speed-medium", "speed-fast", "snowflake", "wind", "undo",
   "binary", "eye", "sun", "moon", "power", "bed", "power-off"]
 
 function tooltip(status) {

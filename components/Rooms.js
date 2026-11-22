@@ -28,8 +28,8 @@ var GLYPH_PIXELS = [
   [0xF0026, "warning-diamond"],  // alert
   [0xF0709, "reload"],           // restart to finish a GPU switch
   [0xF032A, "leaf"],             // Silent, Integrated, battery saver
-  [0xF029A, "cpu-balanced"],     // Balanced
-  [0xF04C5, "cpu-turbo"],        // Turbo, Dedicated
+  [0xF029A, "speed-medium"],     // Balanced
+  [0xF04C5, "speed-fast"],       // Turbo, Dedicated
   [0xF0379, "monitor"],          // screen
   [0xF08AE, "gpu"],              // NVIDIA
   [0xF0FB2, "gpu"],              // NVIDIA state
@@ -351,7 +351,7 @@ function revealLine(line, typed, cursorOn) {
 
 // What each room's icon acts out when the room comes in or is clicked, after
 // DailyDash's AnimatedIcon: only that motion, ending exactly where it began.
-// The mode's CPU hops, the fan spins (it flips its frames), the
+// The mode's dial hops, the fan spins (it flips its frames), the
 // thermometer, the battery and the matrix pulse, the GPU shakes, the screen pops, the
 // keyboard is pressed, the flame wiggles.
 var STORIES = {

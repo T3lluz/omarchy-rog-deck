@@ -16,8 +16,11 @@ Item {
   property int spinEvery: 0
   property color tone: host.fg
   property var value: null
-  // Digits to draw in place of the rounded value (a fan's 4.3).
-  property string figureText: ""
+  // Turns the number as drawn into digits and a unit, for a figure that is
+  // not a whole number (a fan's 4.3k); null draws the rounded number.
+  property var format: null
+  property int delay: 0
+  readonly property var formatted: typeof format === "function" && count.known ? format(count.shown) : null
   property string suffix: "%"
   property string mark: ""
   property bool dimmed: false
@@ -62,13 +65,21 @@ Item {
     transform: Translate { x: head.pose.x * iconBox.cell; y: head.pose.y * iconBox.cell }
   }
 
+  Counter {
+    id: count
+    host: head.host
+    value: head.value
+    delay: head.delay
+  }
+
   BigFigure {
     id: figure
     anchors.right: parent.right
     y: Math.round((head.height - implicitHeight) / 2)
-    value: head.value
-    text: head.figureText
-    suffix: head.suffix
+    // Slides to a new reading rather than jumping to it.
+    value: count.known ? count.shown : null
+    text: head.formatted ? head.formatted.text : ""
+    suffix: head.formatted ? head.formatted.suffix : head.suffix
     tone: head.tone
     foreground: head.host.fg
     mark: head.mark

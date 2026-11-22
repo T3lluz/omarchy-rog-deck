@@ -48,9 +48,12 @@ for (const [name, art] of Object.entries(icons)) {
   }
 }
 const cellsOf = art => art.g12.reduce((n, r) => n + r[2] * r[3], 0)
-// The modes' CPU cores grow from Silent to Turbo, so the bar icon says which.
-const modeCells = Model.PROFILES.map(p => cellsOf(icons[p.pixel]))
-assert.ok(modeCells[0] < modeCells[1] && modeCells[1] < modeCells[2], "the core grows with the mode")
+// The CPU reads as a chip at twelve pixels: a square body with pins on all
+// four sides (Pixelarticons' own reads as a sun there).
+const chip = icons.cpu.g12
+assert.ok(chip.some(r => r[1] === 0) && chip.some(r => r[0] === 0) && chip.some(r => r[1] + r[3] === 12) && chip.some(r => r[0] + r[2] === 12),
+  "the CPU has pins reaching every side")
+assert.ok(cellsOf(icons.cpu) <= 48, "and room between them, or at twelve pixels it reads as a sun")
 // The fan's two frames are the same weight, so flipping them reads as a turn.
 assert.ok(Math.abs(cellsOf(icons.fan) - cellsOf(icons["fan-2"])) <= 4, "the fan's frames match in weight")
 

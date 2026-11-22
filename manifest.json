@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "id": "io.github.t3lluz.rog-deck",
   "name": "ROG Deck",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "author": "fredde",
   "license": "MIT",
   "homepage": "https://github.com/T3lluz/omarchy-rog-deck",
-  "description": "Control panel for ASUS ROG laptops: power modes, temperatures and fans, keyboard lighting with auto-off, AniMe Matrix, FN-lock, battery limit, Battery saver, a CPU power limit for Silent, full speed when plugged in, display and GPU mode, from the Omarchy bar. Updates itself from the panel.",
+  "description": "Control panel for ASUS ROG laptops, in rooms: power modes, temperatures and fans, keyboard lighting with auto-off, AniMe Matrix, FN-lock, battery limit, Battery saver, a CPU power limit for Silent, full speed when plugged in, display and GPU mode, from the Omarchy bar. Updates itself from the panel.",
   "kinds": [
     "service",
     "bar-widget"
@@ -92,7 +92,7 @@
         "key": "barRefresh",
         "type": "boolean",
         "label": "Show the screen refresh rate in the bar",
-        "description": "Turn every bar stat off to show only the power mode icon. You can also pick these in the panel's System tab.",
+        "description": "Turn every bar stat off to show only the power mode icon. You can also pick these in the panel's settings, or in each room.",
         "defaultValue": false
       }
     ]

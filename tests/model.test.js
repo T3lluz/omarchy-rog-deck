@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, gpuModes, gpuModeInfo, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, formatSeconds, barParts, BAR_STATS, PROFILES, gpuConfirmText, gpuNotice, saverOverdrive, pptTriple, powerLimitWatts, limitCaption, limitApplied, batteryGpuNotice, powerHelperNotice, screenLevel, speedWanted, speedPlan, speedHint }")()
+const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, gpuModes, gpuModeInfo, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, formatSeconds, barParts, BAR_STATS, PROFILES, GPU_MODES, FAN_PRESETS, ANIME_CONTENT, gpuConfirmText, gpuNotice, saverOverdrive, pptTriple, powerLimitWatts, limitCaption, limitApplied, batteryGpuNotice, powerHelperNotice, screenLevel, speedWanted, speedPlan, speedHint, pixelWatts, pixelTemp, batteryPixel, ROOM_TONES, roomTone, powerState, powerMark, batteryRoom, fanParts, fansState, graphicsState, displayState, keyboardState, animeRoom, heroPhrases, roomLine, roomForTab, hoverRows, MODEL_PIXELS, batteryFacts, fansLine, fanFacts, heatState, fanFigure }")()
 
 // Trimmed from a real `bin/rog-deck status` on a GA402NV.
 const status = {
@@ -150,14 +150,20 @@ const barStatus = Object.assign({}, status, { display: { refresh: 165, rates: [6
 assert.deepStrictEqual(Model.barParts(barStatus, []), [])
 assert.deepStrictEqual(Model.barParts(null, ["cpuTemp"]), [])
 assert.deepStrictEqual(Model.barParts({ asusd: false }, ["cpuTemp"]), [])
-assert.deepStrictEqual(Model.barParts(barStatus, ["mode", "cpuTemp", "gpuTemp", "fans", "power", "dgpu", "battery", "refresh"]).map(p => p.text),
-  ["Silent", "󰔏 77°", "󰢮 65°", "󰈐 3.4k", "󰻠 8.8 W", "󰢮 6.2 W", "󰂄 76%", "󰍹 165 Hz"])
+// The bar writes figures in the pixel type, each after its pixel icon, and
+// only the mode's name as a word in the bar's own font.
+const allStats = ["mode", "cpuTemp", "gpuTemp", "fans", "power", "dgpu", "battery", "refresh"]
+const parts = Model.barParts(barStatus, allStats)
+assert.deepStrictEqual(parts.map(p => p.text), ["", "77°", "65°", "3.4k", "8.8W", "6.2W", "76%", "165Hz"])
+assert.deepStrictEqual(parts.map(p => p.icon), ["", "thermometer", "gpu", "fan", "cpu", "gpu", "battery-full", "monitor"])
+assert.deepStrictEqual(parts.map(p => p.word), ["Silent", "", "", "", "", "", "", ""])
 assert.deepStrictEqual(Model.barParts(barStatus, ["refresh", "cpuTemp"]).map(p => p.stat), ["refresh", "cpuTemp"], "keeps the picked order")
-assert.strictEqual(Model.barParts(barStatus, ["cpuTemp"])[0].temp, 77)
-assert.strictEqual(Model.barParts(barStatus, ["fans"])[0].temp, null)
+assert.strictEqual(Model.barParts(barStatus, ["cpuTemp"])[0].hot, false)
+assert.strictEqual(Model.barParts(Object.assign({}, barStatus, { temps: { cpu: 91, gpu: 60 } }), ["cpuTemp"])[0].hot, true, "85 °C and up takes the urgent colour")
 const asleep = Object.assign({}, barStatus, { ac: false, dgpu: "suspended", temps: { cpu: 50, gpu: null }, watts: { igpu: 12.4, dgpu: null } })
 assert.deepStrictEqual(Model.barParts(asleep, ["gpuTemp", "dgpu", "power", "battery"]).map(p => p.text),
-  ["󰢮 asleep", "󰻠 12 W", "󰁹 76%"], "no GPU temperature while it sleeps")
+  ["Zz", "12W", "76%"], "no GPU temperature while it sleeps")
+assert.strictEqual(Model.barParts(Object.assign({}, asleep, { dgpu: "absent" }), ["dgpu"])[0].text, "off")
 assert.strictEqual(new Set(Model.BAR_STATS.map(s => s.key)).size, Model.BAR_STATS.length)
 const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "manifest.json"), "utf8"))
 assert.deepStrictEqual(manifest.barWidget.schema.map(e => e.key), Model.BAR_STATS.map(s => s.key), "manifest offers every bar stat")
@@ -166,6 +172,110 @@ for (const entry of manifest.barWidget.schema) assert.strictEqual(manifest.barWi
 // Each mode has the glyph Omarchy's power menu gives it: leaf, gauge, speedometer.
 assert.deepStrictEqual(Model.PROFILES.map(p => p.label), ["Silent", "Balanced", "Turbo"])
 assert.deepStrictEqual(Model.PROFILES.map(p => p.icon.codePointAt(0)), [0xf032a, 0xf029a, 0xf04c5])
+// In pixels: a CPU whose core grows with the mode.
+assert.deepStrictEqual(Model.PROFILES.map(p => p.pixel), ["cpu-silent", "cpu-balanced", "cpu-turbo"])
+
+// ---- rooms
+
+// Neighbouring rooms never share a tone, beside or above.
+const tone = Model.roomTone
+// What each quarter of the panel's width holds, row by row; the fans and
+// battery tiles stack, so the CPU and GPU row is written twice.
+const layout = [["power", "power", "power", "power"], ["heat", "heat", "heat", "fans"], ["heat", "heat", "heat", "battery"],
+  ["graphics", "graphics", "display", "display"], ["keyboard", "keyboard", "anime", "anime"]]
+for (let r = 0; r < layout.length; r++) {
+  for (let c = 0; c < layout[r].length; c++) {
+    const here = tone(layout[r][c])
+    assert.ok(["blue", "green", "cyan", "yellow", "magenta"].includes(here), layout[r][c] + " has a tone")
+    if (c > 0 && layout[r][c] !== layout[r][c - 1])
+      assert.notStrictEqual(here, tone(layout[r][c - 1]), layout[r][c] + " differs from its left neighbour")
+    if (r > 0 && layout[r][c] !== layout[r - 1][c])
+      assert.notStrictEqual(here, tone(layout[r - 1][c]), layout[r][c] + " differs from the room above")
+  }
+}
+
+// Power: what the charger and the mode's own option do.
+const fast = { epp: "performance", held: true }
+assert.strictEqual(Model.powerState({ ac: true, profile: "balanced", speed: fast, speedOn: true }), "Plugged in · full speed")
+assert.strictEqual(Model.powerState({ ac: true, profile: "balanced", speed: { epp: "balance_performance" }, speedOn: true }), "Plugged in · full speed soon")
+assert.strictEqual(Model.powerState({ ac: false, profile: "balanced", speed: fast, speedOn: true, saverActive: true }), "On battery · Battery saver")
+assert.strictEqual(Model.powerState({ ac: false, profile: "power-saver", limitShown: true, limit: { enabled: true, watts: 18 } }), "On battery · held to 18 W")
+assert.strictEqual(Model.powerMark({ ac: true, profile: "balanced", speed: fast }), "zap")
+assert.strictEqual(Model.powerMark({ ac: false, profile: "balanced", speed: fast }), "")
+
+// Battery: a mark for every state that is not plain discharging, and low
+// never on colour alone.
+assert.deepStrictEqual(Model.batteryRoom({ percent: 64, status: "Charging", limit: 80, watts: 31.2 }, true, false),
+  { level: 64, state: "Charging", mark: "zap", limit: 80 })
+assert.deepStrictEqual(Model.batteryRoom({ percent: 80, status: "Not charging", limit: 80, watts: 0 }, true, false),
+  { level: 80, state: "Held at 80%", mark: "plug", limit: 80 })
+assert.strictEqual(Model.batteryRoom({ percent: 100, status: "Full", limit: 100 }, true, false).state, "Full")
+assert.deepStrictEqual(Model.batteryRoom({ percent: 12, status: "Discharging", limit: 100, watts: 9.4 }, false, true),
+  { level: 12, state: "Saver on", mark: "battery-low", limit: -1 })
+assert.strictEqual(Model.batteryRoom({ percent: 50, status: "Discharging", watts: 9.4 }, false, false).state, "On battery")
+assert.strictEqual(Model.batteryRoom(null, true, false).level, null)
+assert.deepStrictEqual(Model.batteryFacts({ percent: 64, watts: 31.2, status: "Charging" }, true), [{ label: "Power", value: "+31 W" }, { label: "State", value: "Charging" }])
+assert.deepStrictEqual(Model.batteryFacts({ percent: 64, watts: 7.25 }, false), [{ label: "Power", value: "−7.3 W" }])
+assert.deepStrictEqual(Model.batteryFacts({ percent: 90, watts: 0 }, true)[0], { label: "Power", value: "0 W" })
+assert.deepStrictEqual([5, 15, 40, 60, 100, null].map(Model.batteryPixel),
+  ["battery-low", "battery-low", "battery-medium", "battery-full", "battery-full", "battery"])
+
+// Fans: the GPU reads nothing while it sleeps, and says so.
+const fanned = Model.fanParts({ temps: { cpu: 88, gpu: null }, fans: { cpu: 3400, gpu: 0 }, dgpu: "suspended" })
+assert.deepStrictEqual(fanned.map(p => [p.key, p.state, p.hot]), [["cpu", "3.4k rpm", true], ["gpu", "asleep · fan off", false]])
+assert.strictEqual(Model.fansState(true, true), "Custom curve")
+assert.strictEqual(Model.heatState({ cpu: 61, gpu: null }), "Cool")
+assert.strictEqual(Model.heatState({ cpu: 66, gpu: 74 }), "Warm", "the hotter of the two")
+assert.strictEqual(Model.heatState({ cpu: 96, gpu: 70 }), "Hot")
+assert.strictEqual(Model.heatState({}), "No reading")
+assert.strictEqual(Model.roomForTab("cpu"), "heat")
+assert.strictEqual(Model.fansLine(4100, false, true), "4.1k rpm")
+assert.deepStrictEqual(Model.fanFigure(4349), { text: "4.3", suffix: "k" })
+assert.deepStrictEqual(Model.fanFigure(10000), { text: "10.0", suffix: "k" })
+assert.deepStrictEqual(Model.fanFigure(850), { text: "850", suffix: "" })
+assert.deepStrictEqual(Model.fanFigure(0), { text: "0", suffix: "" })
+assert.deepStrictEqual(Model.fanFigure(null), { text: "", suffix: "" })
+assert.strictEqual(Model.fansLine(0, true, true), "Stopped · custom curve")
+assert.strictEqual(Model.fansLine(null, false, false), "No fan reading")
+assert.deepStrictEqual(Model.fanFacts({ temps: { cpu: 88.4, gpu: null }, fans: { cpu: 3400, gpu: 0 }, dgpu: "suspended" }),
+  [{ label: "CPU", value: "88 °C, 3.4k rpm" }, { label: "GPU", value: "asleep, fan off" }])
+assert.strictEqual(Model.fansState(false, false), "Reading the curves")
+
+// Graphics, display, keyboard, AniMe lines.
+assert.strictEqual(Model.graphicsState({ mode: "hybrid" }, "active", 12.3, "hybrid"), "NVIDIA awake", "its draw is the figure")
+assert.strictEqual(Model.graphicsState({ mode: "hybrid" }, "suspended", null, "integrated"), "Integrated after a restart")
+assert.strictEqual(Model.displayState("auto", false, true), "Auto rate")
+assert.strictEqual(Model.displayState("auto", true, false), "Battery saver")
+assert.strictEqual(Model.keyboardState(2, { enabled: true, timeout: 60, dimOnly: false }, true), "Off after 1 min · FN\u2011lock")
+assert.strictEqual(Model.keyboardState(1, { enabled: true, timeout: 30, dimOnly: true }, false), "Dims after 30 s")
+assert.strictEqual(Model.keyboardState(3, { enabled: false }, false), "Stays lit")
+assert.strictEqual(Model.keyboardState(0, { enabled: true, timeout: 60 }, false), "Off")
+assert.deepStrictEqual(Model.animeRoom({}, false, 2, ""), { level: 0, state: "Off" })
+assert.deepStrictEqual(Model.animeRoom({}, true, 3, "RogLogoGlitch"), { level: 3, state: "ROG logo · High" })
+
+// The prompt: facts in turn, an open room's own line, and asusd missing.
+const phrases = Model.heroPhrases({ ready: true, profile: "balanced", ac: true, temps: { cpu: 61.4 }, fans: { cpu: 2100, gpu: 0 },
+  dgpu: "suspended", gpuMode: "hybrid", battery: { percent: 80, limit: 80 }, refresh: 165, model: "ROG Zephyrus G14 GA402NV_GA402NV" })
+assert.deepStrictEqual(phrases, ["Balanced on the charger", "CPU at 61°, fans at 2.1k rpm", "Hybrid graphics, NVIDIA asleep",
+  "Battery held at 80% to spare it", "Screen at 165 Hz", "Scroll on the bar icon to change mode", "ROG Zephyrus G14 GA402NV"])
+assert.deepStrictEqual(Model.heroPhrases({ ready: false }), ["asusd is not running"])
+for (const room of ["power", "heat", "battery", "fans", "display", "graphics", "keyboard", "anime"])
+  assert.ok(Model.roomLine(room, "balanced").length > 0, room + " says what its drawer holds")
+
+// openTab still takes the old tab names.
+assert.strictEqual(Model.roomForTab("lighting"), "keyboard")
+assert.strictEqual(Model.roomForTab("System"), "settings")
+assert.strictEqual(Model.roomForTab("main"), "")
+assert.strictEqual(Model.roomForTab("curve"), "fans-curve")
+assert.strictEqual(Model.roomForTab("nope"), null)
+
+// The hover card: a row per reading, tones by room, figures the pixel type can draw.
+const rows = Model.hoverRows(Object.assign({}, barStatus, { profile: { active: "balanced" } }), { profile: "balanced", speedHeld: true })
+assert.deepStrictEqual(rows.map(r => r.key), ["power", "cpu", "gpu", "fans", "battery", "display"])
+assert.strictEqual(rows[0].mark, "zap")
+assert.strictEqual(rows[2].level, 65)
+assert.deepStrictEqual(Model.hoverRows(asleep, {}).find(r => r.key === "gpu"), { key: "gpu", name: "NVIDIA asleep", icon: "gpu", tone: "green", level: null, figure: "", mark: "", dimmed: true })
+assert.deepStrictEqual(Model.hoverRows({ asusd: false }, {}), [])
 
 // Every bar stat has a tile icon and a short label for the two-column grid.
 for (const s of Model.BAR_STATS) assert.ok(s.icon && s.label.length <= 14, s.key + " fits a half-width tile")

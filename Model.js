@@ -6,10 +6,12 @@
 // power-profiles-daemon names, in tile order, with the names ROG uses. The
 // glyphs are the ones Omarchy's own power menu shows for each profile, so
 // the bar, the panel and the system agree.
+// `pixel` is the mode's pixel icon in the bar and the panel: a CPU whose
+// core grows with the power it is given, so scrolling the bar icon grows it.
 var PROFILES = [
-  { key: "power-saver", label: "Silent", icon: "󰌪", hint: "Quiet fans, low power, longest battery" },
-  { key: "balanced", label: "Balanced", icon: "󰊚", hint: "Everyday mode" },
-  { key: "performance", label: "Turbo", icon: "󰓅", hint: "Full CPU and GPU power, louder fans" }
+  { key: "power-saver", label: "Silent", icon: "󰌪", pixel: "cpu-silent", hint: "Quiet fans, low power, longest battery" },
+  { key: "balanced", label: "Balanced", icon: "󰊚", pixel: "cpu-balanced", hint: "Everyday mode" },
+  { key: "performance", label: "Turbo", icon: "󰓅", pixel: "cpu-turbo", hint: "Full CPU and GPU power, louder fans" }
 ]
 
 function parseStatus(raw) {
@@ -32,7 +34,7 @@ function normalizeProfile(name) {
 function profileInfo(key) {
   for (var i = 0; i < PROFILES.length; i++)
     if (PROFILES[i].key === key) return PROFILES[i]
-  return { key: key || "", label: key ? key.charAt(0).toUpperCase() + key.slice(1) : "Unknown", icon: "󰂄", hint: "" }
+  return { key: key || "", label: key ? key.charAt(0).toUpperCase() + key.slice(1) : "Unknown", icon: "󰊚", pixel: "cpu-balanced", hint: "" }
 }
 
 // The profiles to show as tiles: the daemon's list, in our order.
@@ -75,7 +77,7 @@ function watts(value) {
 function rpm(value) {
   if (value === null || value === undefined) return "—"
   if (value === 0) return "off"
-  return value >= 1000 ? (Math.round(value / 100) / 10) + "k" : String(value)
+  return value >= 1000 ? (Math.round(value / 100) / 10).toFixed(1) + "k" : String(value)
 }
 
 function maxFan(status) {
@@ -97,9 +99,9 @@ function dgpuLabel(state) {
 
 // GPU modes, in tile order. bin/rog-deck lists the ones this laptop has.
 var GPU_MODES = [
-  { value: "integrated", label: "Integrated", icon: "󰌪", hint: "AMD only, NVIDIA powered off. Longest battery" },
-  { value: "hybrid", label: "Hybrid", icon: "󰢮", hint: "AMD drives the screen, NVIDIA wakes for games" },
-  { value: "dedicated", label: "Dedicated", icon: "󰓅", hint: "NVIDIA drives the screen directly (MUX). Lowest latency, most power" }
+  { value: "integrated", label: "Integrated", icon: "󰌪", pixel: "leaf", hint: "AMD only, NVIDIA powered off. Longest battery" },
+  { value: "hybrid", label: "Hybrid", icon: "󰢮", pixel: "gpu", hint: "AMD drives the screen, NVIDIA wakes for games" },
+  { value: "dedicated", label: "Dedicated", icon: "󰓅", pixel: "monitor", hint: "NVIDIA drives the screen directly (MUX). Lowest latency, most power" }
 ]
 
 function gpuModes(gpu) {
@@ -110,7 +112,7 @@ function gpuModes(gpu) {
 function gpuModeInfo(value) {
   for (var i = 0; i < GPU_MODES.length; i++)
     if (GPU_MODES[i].value === value) return GPU_MODES[i]
-  return { value: value || "", label: value ? value.charAt(0).toUpperCase() + value.slice(1) : "Unknown", icon: "󰢮", hint: "" }
+  return { value: value || "", label: value ? value.charAt(0).toUpperCase() + value.slice(1) : "Unknown", icon: "󰢮", pixel: "gpu", hint: "" }
 }
 
 function batteryLine(battery, onAc) {
@@ -266,8 +268,8 @@ var ANIME_SLOTS = [
 ]
 
 var ANIME_CONTENT = [
-  { value: "banner", label: "Banner", icon: "󰊄", hint: "Scrolling ROG banner", builtin: "BinaryBannerScroll" },
-  { value: "logo", label: "ROG Logo", icon: "󰈈", hint: "The glitching ROG eye", builtin: "RogLogoGlitch" }
+  { value: "banner", label: "Banner", icon: "󰊄", pixel: "binary", hint: "Scrolling ROG banner", builtin: "BinaryBannerScroll" },
+  { value: "logo", label: "ROG logo", icon: "󰈈", pixel: "eye", hint: "The glitching ROG eye", builtin: "RogLogoGlitch" }
 ]
 
 // All four built-in slots, with one changed: asusd sets them together.
@@ -395,10 +397,10 @@ function speedHint(enabled, helper, onAc, epp) {
 // ----------------------------------------------------------------- fans
 
 var FAN_PRESETS = [
-  { value: "silent", label: "Silent", hint: "Fans off until about 70 °C" },
-  { value: "stock", label: "Stock", hint: "Close to the firmware curve" },
-  { value: "cool", label: "Cool", hint: "Spins up early" },
-  { value: "max", label: "Max", hint: "Full speed" }
+  { value: "silent", label: "Silent", pixel: "leaf", hint: "Fans off until about 70 °C" },
+  { value: "stock", label: "Stock", pixel: "fan", hint: "Close to the firmware curve" },
+  { value: "cool", label: "Cool", pixel: "snowflake", hint: "Spins up early" },
+  { value: "max", label: "Max", pixel: "wind", hint: "Full speed" }
 ]
 
 function curveString(points) {
@@ -427,42 +429,337 @@ var BAR_STATS = [
   { key: "barRefresh", stat: "refresh", label: "Refresh rate", icon: "󰍹", fallback: false }
 ]
 
-// One entry per picked stat that has a reading: { stat, text, temp }.
-// `temp` is set for temperatures so the bar can colour them by heat.
+// Figures as the pixel type writes them (components/Rooms.js PIXEL_FONT):
+// no spaces before a unit, so a bar item stays narrow.
+function pixelWatts(value) {
+  if (value === null || value === undefined) return ""
+  return (value >= 10 ? Math.round(value) : Math.round(value * 10) / 10) + "W"
+}
+
+function pixelTemp(value) {
+  return value === null || value === undefined ? "--" : Math.round(value) + "°"
+}
+
+// The battery's pixel icon by its level.
+function batteryPixel(percent) {
+  if (percent === null || percent === undefined) return "battery"
+  if (percent <= 15) return "battery-low"
+  if (percent < 60) return "battery-medium"
+  return "battery-full"
+}
+
+// One entry per picked stat that has a reading, in the bar's pixel icons and
+// pixel type: { stat, icon, text, word, hot }. `word` is set where the entry
+// is a word rather than a figure (the mode's name), which the bar writes in
+// its own font. `hot` marks a temperature at 85 °C or more, which the bar
+// shows in its urgent colour: the bar keeps its own colours otherwise.
 function barParts(status, picked) {
   if (!status || !status.asusd || !picked || picked.length === 0) return []
   var parts = []
   var t = status.temps || {}
+  function add(stat, icon, text, hot) { parts.push({ stat: stat, icon: icon, text: text, word: "", hot: !!hot }) }
   for (var i = 0; i < picked.length; i++) {
     var stat = picked[i]
     if (stat === "mode") {
-      parts.push({ stat: stat, text: profileInfo(status.profile && status.profile.active).label, temp: null })
+      var info = profileInfo(status.profile && status.profile.active)
+      parts.push({ stat: stat, icon: "", text: "", word: info.label, hot: false })
     } else if (stat === "cpuTemp") {
-      parts.push({ stat: stat, text: "󰔏 " + temperature(t.cpu), temp: t.cpu === undefined ? null : t.cpu })
+      add(stat, "thermometer", pixelTemp(t.cpu), heat(t.cpu) === 2)
     } else if (stat === "gpuTemp") {
       // No reading while the dGPU sleeps; it is not woken to get one.
-      if (t.gpu !== null && t.gpu !== undefined) parts.push({ stat: stat, text: "󰢮 " + temperature(t.gpu), temp: t.gpu })
+      if (t.gpu !== null && t.gpu !== undefined) add(stat, "gpu", pixelTemp(t.gpu), heat(t.gpu) === 2)
     } else if (stat === "fans") {
       var fan = maxFan(status)
-      if (fan !== null) parts.push({ stat: stat, text: "󰈐 " + rpm(fan), temp: null })
+      if (fan !== null) add(stat, "fan", rpm(fan))
     } else if (stat === "power") {
       var w = status.watts ? status.watts.igpu : null
-      if (w !== null && w !== undefined) parts.push({ stat: stat, text: "󰻠 " + watts(w), temp: null })
+      if (w !== null && w !== undefined) add(stat, "cpu", pixelWatts(w))
     } else if (stat === "dgpu") {
       if (status.dgpu) {
         var dw = status.watts ? status.watts.dgpu : null
-        parts.push({ stat: stat, text: "󰢮 " + (status.dgpu === "active" && dw ? watts(dw) : dgpuLabel(status.dgpu)), temp: null })
+        var said = status.dgpu === "active" ? (dw ? pixelWatts(dw) : "") : status.dgpu === "suspended" ? "Zz" : status.dgpu === "absent" ? "off" : ""
+        add(stat, "gpu", said)
       }
     } else if (stat === "battery") {
       var b = status.battery
-      if (b && b.percent !== null && b.percent !== undefined)
-        parts.push({ stat: stat, text: (status.ac ? "󰂄 " : "󰁹 ") + b.percent + "%", temp: null })
+      if (b && b.percent !== null && b.percent !== undefined) add(stat, batteryPixel(b.percent), b.percent + "%")
     } else if (stat === "refresh") {
-      if (status.display && status.display.refresh) parts.push({ stat: stat, text: "󰍹 " + status.display.refresh + " Hz", temp: null })
+      if (status.display && status.display.refresh) add(stat, "monitor", status.display.refresh + "Hz")
     }
   }
   return parts
 }
+
+// --------------------------------------------------------------- rooms
+
+// Each room's tone, by what it is, the way the plugins agree on them: power
+// and the machine blue, health green, cooling and input cyan, light yellow,
+// play green, a display of its own magenta. Neighbours never share one; the
+// rows are Power, then the CPU and GPU with the Fans and Battery tiles
+// stacked beside them, Graphics and Display, Keyboard and AniMe. The fans
+// take magenta because cyan is beside them and blue above.
+var ROOM_TONES = {
+  power: "blue",
+  heat: "cyan",
+  fans: "magenta",
+  battery: "green",
+  display: "yellow",
+  graphics: "green",
+  keyboard: "cyan",
+  anime: "magenta",
+  mark: "yellow"
+}
+
+function roomTone(room) {
+  return ROOM_TONES[room] || ""
+}
+
+// What the power room says under the mode's name. ctx: { ac, saverActive,
+// profile, speed ({ epp, held }), speedOn (full speed saved and its helper
+// working), limit ({ enabled, watts }), limitShown }.
+function powerState(ctx) {
+  if (!ctx) return ""
+  var parts = [ctx.ac ? "Plugged in" : "On battery"]
+  if (ctx.profile === "balanced" && ctx.speedOn && ctx.ac) parts.push(ctx.speed && ctx.speed.epp === "performance" ? "full speed" : "full speed soon")
+  if (ctx.profile === "power-saver" && ctx.limitShown && ctx.limit && ctx.limit.enabled) parts.push("held to " + ctx.limit.watts + " W")
+  if (ctx.saverActive) parts.push("Battery saver")
+  return parts.join(" · ")
+}
+
+// The mark beside the package power: a bolt while full speed holds.
+function powerMark(ctx) {
+  return ctx && ctx.ac && ctx.profile === "balanced" && ctx.speed && ctx.speed.held && ctx.speed.epp === "performance" ? "zap" : ""
+}
+
+// The battery room: { level, state, mark, limit }. The mark is a bolt while
+// it charges, a plug while on the charger and holding, the low battery when
+// it runs low; low never rests on colour alone. The state is short: the
+// tile's tooltip says it, and the power flowing is in the room's drawer.
+function batteryRoom(battery, ac, saverActive) {
+  if (!battery || battery.percent === null || battery.percent === undefined)
+    return { level: null, state: ac ? "Plugged in" : "No reading", mark: "", limit: -1 }
+  var pct = battery.percent
+  var limit = battery.limit && battery.limit < 100 ? battery.limit : -1
+  var charging = /^charging$/i.test(String(battery.status || ""))
+  var state, mark = ""
+  if (charging) {
+    state = "Charging"
+    mark = "zap"
+  } else if (ac) {
+    state = limit > 0 && pct >= limit - 1 ? "Held at " + limit + "%" : pct >= 99 ? "Full" : "Plugged in"
+    mark = "plug"
+  } else {
+    state = saverActive ? "Saver on" : "On battery"
+    if (pct <= 15) mark = "battery-low"
+  }
+  return { level: pct, state: state, mark: mark, limit: limit }
+}
+
+// The battery room's readings: the power flowing in or out, and what the
+// kernel says it is doing. The limit is the fader under them.
+function batteryFacts(battery, ac) {
+  if (!battery || battery.percent === null || battery.percent === undefined) return []
+  var w = battery.watts
+  var flow = !w ? "0 W" : (ac ? "+" : "−") + watts(w)
+  var list = [{ label: "Power", value: flow }]
+  if (battery.status) list.push({ label: "State", value: String(battery.status) })
+  return list
+}
+
+// The fans room's two parts, CPU and GPU: the temperature over a meter of it
+// (0 to 100 °C) and what the part's fan does. The GPU reads nothing while it
+// sleeps; it is not woken to read it.
+function fanParts(status) {
+  var t = status && status.temps ? status.temps : {}
+  var f = status && status.fans ? status.fans : {}
+  var parts = []
+  function fanLine(value) { return value === null || value === undefined ? "no fan reading" : value === 0 ? "fan off" : rpm(value) + " rpm" }
+  if (t.cpu !== undefined || f.cpu !== undefined)
+    parts.push({ key: "cpu", label: "CPU", icon: "cpu", temp: t.cpu === undefined ? null : t.cpu, rpm: f.cpu === undefined ? null : f.cpu,
+                 state: fanLine(f.cpu), hot: heat(t.cpu) === 2 })
+  if (t.gpu !== undefined || f.gpu !== undefined) {
+    var asleep = (t.gpu === null || t.gpu === undefined) && status && status.dgpu !== "active"
+    parts.push({ key: "gpu", label: "GPU", icon: "gpu", temp: t.gpu === undefined ? null : t.gpu, rpm: f.gpu === undefined ? null : f.gpu,
+                 state: (asleep ? "asleep · " : "") + fanLine(f.gpu), hot: heat(t.gpu) === 2 })
+  }
+  return parts
+}
+
+function fansState(custom, known) {
+  if (!known) return "Reading the curves"
+  return custom ? "Custom curve" : "Firmware curve"
+}
+
+// How hot the CPU and GPU run, by the hotter of the two: the same steps the
+// bar's colour and the hot mark use.
+function heatState(temps) {
+  var t = temps || {}
+  var hottest = null
+  if (t.cpu !== null && t.cpu !== undefined) hottest = t.cpu
+  if (t.gpu !== null && t.gpu !== undefined && (hottest === null || t.gpu > hottest)) hottest = t.gpu
+  if (hottest === null) return "No reading"
+  return ["Cool", "Warm", "Hot"][heat(hottest)]
+}
+
+// The fans room's line: how fast the faster fan spins, and a custom curve
+// when one runs (the firmware's is the usual, so it goes unsaid).
+function fansLine(fastest, custom, known) {
+  var speed = fastest === null || fastest === undefined ? "No fan reading" : fastest === 0 ? "Stopped" : rpm(fastest) + " rpm"
+  return known && custom ? speed + " · custom curve" : speed
+}
+
+// The fans room's figure: the faster fan in thousands, one decimal, as the
+// rest of the panel writes it (4.3k), or the plain number under 1000.
+function fanFigure(value) {
+  if (value === null || value === undefined) return { text: "", suffix: "" }
+  if (value < 1000) return { text: String(Math.round(value)), suffix: "" }
+  return { text: (Math.round(value / 100) / 10).toFixed(1), suffix: "k" }
+}
+
+// The fans room opened: both temperatures and both fans.
+function fanFacts(status) {
+  return fanParts(status).map(function(p) {
+    var temp = p.temp === null || p.temp === undefined ? "asleep" : Math.round(p.temp) + " °C"
+    var fan = p.rpm === null || p.rpm === undefined ? "" : p.rpm === 0 ? ", fan off" : ", " + rpm(p.rpm) + " rpm"
+    return { label: p.label, value: temp + fan }
+  })
+}
+
+// What the graphics room says: the NVIDIA GPU's state, or the mode waiting
+// on a restart.
+function graphicsState(gpu, dgpu, dgpuWatts, next) {
+  if (gpu && next && next !== gpu.mode) return gpuModeInfo(next).label + " after a restart"
+  // Its draw is the room's figure, so the line leaves it out.
+  if (dgpu === "active") return "NVIDIA awake"
+  if (dgpu === "suspended") return "NVIDIA asleep"
+  if (dgpu === "absent") return "NVIDIA off"
+  return ""
+}
+
+// The display room's line: how the rate is chosen. Short: the rate itself
+// is the room's figure, and the drawer says the rest.
+function displayState(refresh, saverActive, ac) {
+  if (saverActive) return "Battery saver"
+  if (refresh === "auto") return "Auto rate"
+  if (refresh) return "Fixed rate"
+  return "Set by Hyprland"
+}
+
+// The keyboard room's line: what turns it off, and FN-lock. The level is in
+// the cells under it.
+function keyboardState(level, idle, fnlockOn) {
+  var parts = []
+  if (!(level > 0)) parts.push("Off")
+  else if (idle && idle.enabled) parts.push((idle.dimOnly ? "Dims" : "Off") + " after " + formatSeconds(idle.timeout))
+  else parts.push("Stays lit")
+  // A hyphen that does not break, so FN-lock never splits across lines.
+  if (fnlockOn) parts.push("FN\u2011lock")
+  return parts.join(" · ")
+}
+
+var ANIME_LEVELS = ["Off", "Low", "Med", "High"]
+
+// The AniMe room's line and its 0..3 level, 0 being off.
+function animeRoom(anime, enabled, brightness, awake) {
+  if (!anime) return { level: 0, state: "" }
+  var level = enabled ? Math.max(1, Math.min(3, brightness || 1)) : 0
+  if (!enabled) return { level: 0, state: "Off" }
+  var showing = awake === "RogLogoGlitch" ? "ROG logo" : "Banner"
+  return { level: level, state: showing + " · " + ANIME_LEVELS[level] }
+}
+
+// The prompt under the title, a fact every few seconds. ctx: { ready,
+// profile, ac, temps, fans, dgpu, gpuMode, battery, refresh }.
+function heroPhrases(ctx) {
+  if (!ctx) return ["Reading the laptop"]
+  if (!ctx.ready) return ["asusd is not running"]
+  var lines = []
+  lines.push(profileInfo(ctx.profile).label + (ctx.ac ? " on the charger" : " on battery"))
+  var t = ctx.temps || {}
+  if (t.cpu !== null && t.cpu !== undefined) {
+    var fan = maxFan({ fans: ctx.fans })
+    lines.push("CPU at " + Math.round(t.cpu) + "°" + (fan ? ", fans at " + rpm(fan) + " rpm" : fan === 0 ? ", fans off" : ""))
+  }
+  if (ctx.gpuMode) lines.push(gpuModeInfo(ctx.gpuMode).label + " graphics, NVIDIA " + dgpuLabel(ctx.dgpu))
+  var b = ctx.battery
+  if (b && b.percent !== null && b.percent !== undefined) {
+    var limited = b.limit && b.limit < 100
+    if (ctx.ac && limited && b.percent >= b.limit - 1) lines.push("Battery held at " + b.limit + "% to spare it")
+    else lines.push("Battery at " + b.percent + "%" + (limited ? ", stops at " + b.limit + "%" : ""))
+  }
+  if (ctx.refresh) lines.push("Screen at " + ctx.refresh + " Hz")
+  lines.push("Scroll on the bar icon to change mode")
+  if (ctx.model) lines.push(String(ctx.model).replace(/_.*$/, ""))
+  return lines
+}
+
+// The room or page `openTab` opens: a room's key, "settings" or
+// "fans-curve", "" for the rooms with none open, null for a name it does not
+// know. The tab names from before the rooms still work.
+var TAB_ROOMS = {
+  main: "", rooms: "", power: "power", battery: "battery", fans: "fans", heat: "heat", cpu: "heat", temps: "heat", display: "display", graphics: "graphics",
+  keyboard: "keyboard", lighting: "keyboard", keys: "keyboard", anime: "anime", system: "settings", settings: "settings",
+  curve: "fans-curve", curves: "fans-curve", "fans-curve": "fans-curve"
+}
+
+function roomForTab(name) {
+  var key = String(name || "").trim().toLowerCase()
+  return TAB_ROOMS.hasOwnProperty(key) ? TAB_ROOMS[key] : null
+}
+
+// What the prompt says while a room is open: what its drawer holds.
+function roomLine(room, profile) {
+  if (room === "power") return "Pick a mode, or scroll on the bar icon"
+  if (room === "heat") return "Warm from 70 °C, hot from 85 °C"
+  if (room === "battery") return "Where charging stops, and Battery saver"
+  if (room === "fans") return "Fan curves follow the mode, " + profileInfo(profile).label + " now"
+  if (room === "display") return "The refresh rate and the panel's switches"
+  if (room === "graphics") return "Switching the GPU mode restarts the laptop"
+  if (room === "keyboard") return "When the light turns itself off, and FN-lock"
+  if (room === "anime") return "What the lid shows, and when it rests"
+  return ""
+}
+
+// The card the bar item opens on hover: a row per room with a reading, in
+// the panel's tones. { key, name, icon, tone, level (0..100 or null),
+// figure (pixel type), mark, dimmed }.
+function hoverRows(status, ctx) {
+  if (!status || !status.asusd) return []
+  ctx = ctx || {}
+  var rows = []
+  var profile = profileInfo(ctx.profile || (status.profile && status.profile.active))
+  var w = status.watts || {}
+  rows.push({ key: "power", name: profile.label + " mode", icon: profile.pixel, tone: roomTone("power"), level: null,
+              figure: w.igpu !== null && w.igpu !== undefined ? pixelWatts(w.igpu) : "", mark: ctx.speedHeld ? "zap" : "", dimmed: false })
+  var t = status.temps || {}
+  if (t.cpu !== null && t.cpu !== undefined)
+    rows.push({ key: "cpu", name: "CPU", icon: "cpu", tone: roomTone("fans"), level: Math.max(0, Math.min(100, t.cpu)),
+                figure: pixelTemp(t.cpu), mark: heat(t.cpu) === 2 ? "thermometer" : "", dimmed: false })
+  if (status.dgpu) {
+    var awake = t.gpu !== null && t.gpu !== undefined
+    rows.push({ key: "gpu", name: "NVIDIA " + dgpuLabel(status.dgpu), icon: "gpu", tone: roomTone("graphics"),
+                level: awake ? Math.max(0, Math.min(100, t.gpu)) : null, figure: awake ? pixelTemp(t.gpu) : "",
+                mark: awake && heat(t.gpu) === 2 ? "thermometer" : "", dimmed: !awake })
+  }
+  var fan = maxFan(status)
+  if (fan !== null) rows.push({ key: "fans", name: "Fans", icon: "fan", tone: roomTone("fans"), level: null, figure: rpm(fan), mark: "", dimmed: fan === 0 })
+  var b = status.battery
+  if (b && b.percent !== null && b.percent !== undefined) {
+    var room = batteryRoom(b, status.ac, false)
+    rows.push({ key: "battery", name: "Battery", icon: batteryPixel(b.percent), tone: roomTone("battery"), level: b.percent,
+                figure: b.percent + "%", mark: room.mark, dimmed: false })
+  }
+  if (status.display && status.display.refresh)
+    rows.push({ key: "display", name: "Screen", icon: "monitor", tone: roomTone("display"), level: null,
+                figure: status.display.refresh + "Hz", mark: "", dimmed: false })
+  return rows
+}
+
+// Every pixel icon this file names, for the test that checks Pixels.js has
+// them all.
+var MODEL_PIXELS = ["thermometer", "gpu", "fan", "cpu", "monitor", "battery", "battery-low", "battery-medium",
+  "battery-full", "zap", "plug", "leaf", "cpu-silent", "cpu-balanced", "cpu-turbo", "snowflake", "wind", "undo",
+  "binary", "eye", "sun", "moon", "power", "bed", "power-off"]
 
 function tooltip(status) {
   if (!status) return "ROG Deck: reading the laptop…"

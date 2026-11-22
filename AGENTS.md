@@ -5,9 +5,12 @@ How ROG Deck is put together, for anyone (or any agent) changing it. The user-fa
 ## Layout
 
 - `Service.qml`: always loaded. Owns the status poller, the action queue to `bin/rog-deck`, `~/.config/rog-deck/settings.json`, the background jobs (keyboard auto-off, FN-lock after login, Auto refresh rate, theme re-apply) and the IPC target.
-- `Panel.qml`: the bar entry and panel, once per monitor, drawing the service's state. Bar picks come from `WidgetSettings.qml`.
-- `components/`: the tabs, the panel kit (below) and the shared updater. The mode icons are the Nerd Font glyphs Omarchy's own power menu uses, from `Model.PROFILES`.
-- `Model.js`: parsing and formatting, tested by `tests/model.test.js`.
+- `Panel.qml`: the bar entry, its hover card and the panel, once per monitor, drawing the service's state. Bar picks come from `WidgetSettings.qml`. It holds what the rooms read (`host` in every room file): the sizes (`roomPad`, `roomGap`, `iconColumn`, `textInset`, `panelWidth`), `toneOf(room)`, `lowTone`, the one clock (`entry`, `clock`, `wake`), `openRoom`/`toggleRoom`, `view`/`setView`, and the prompt (`heroLine`).
+- `components/RoomsPage.qml`: the main page. The title in a neutral room (`HeroBlock.qml`), the banners, `PowerRoom.qml` the whole width, then `HeatRoom` (the CPU and GPU) across most of a row with `FansRoom` and `BatteryRoom` stacked beside it as two tiles that make a square, then two rooms to a row: `GraphicsRoom`/`DisplayRoom`, `KeyboardRoom`/`AnimeRoom`. A room the laptop lacks leaves its neighbour the space. A row's open room drawer is `PairDrawer.qml`, a room the width of the row in the open room's tone, holding that room's `*Drawer.qml`; the power room's drawer is inside it (`Drawer.qml`). A tile (`TileHeader.qml`) is its icon and its figure, no name: the room's `tip` names it and says its state on hover. The stack is as wide as the row is tall, or wider where a tile's widest figure (100%) needs it. Two half rooms in a row share a header height (`headerNatural`, `headerMin`), so their faders line up. `SettingsPage.qml` (the gear) and `FansPage.qml` (the curve editor, `FanCurves.qml` and `FanCurve.qml`) are the other two pages.
+- The Rooms pieces, the same as Sonus's: `Room.qml` (tint, rise, ripple, click), `RoomHeader.qml` (pixel icon, name and chevron, a decoding state line, `BigFigure.qml`), `Meter.qml` (cells; with `interactive` it is a fader that commits on release), `Decode.qml`, `Drawer.qml`, `HeroBlock.qml`, `PixelIcon.qml`, `PixelText.qml`, `PixelButton.qml`, `HoverCard.qml` and `HoverRow.qml`. ROG Deck's own: `ChoiceRow.qml` (a pick of one as small cells: modes, GPU modes, rates, timeouts, presets), `LightFader.qml` (a light's on and off button in the icon column, then a cell per level, as Sonus lays out a fader), `LevelPick.qml` (a labelled fader for a limit), `Facts.qml` (readings two to a line), `RoomPicks.qml` (a room's own bar switches).
+- `components/Rooms.js`: the look's pure logic (tones, block face, pixel type, meter cells, faders, stories, the fan's spin, decode, the prompt's reveal, the glyph map), tested by `tests/rooms.test.js`.
+- `components/Pixels.js`: every icon, pixel art from Pixelarticons (MIT), built by `scripts/fetch-pixel-icons.py` (source SVGs in `pixels/`). The script also draws what the set lacks on the same grid (the fan's two frames, the AniMe Matrix) and the CPU, plain and as the three modes. Add a name to its `ICONS` and run it; `--show` prints the grids.
+- `Model.js`: parsing and formatting, and what each room says, tested by `tests/model.test.js`.
 - `bin/rog-deck`: the backend (Python): asusd over D-Bus, power-profiles-daemon, sysfs, hyprctl, `nvidia-smi` only while the dGPU is awake. `rog-deck update` hands over to `bin/plugin-update`.
 - `bin/rog-deck-power`: the root helper for Silent's CPU limit, panel power savings, Wi-Fi power save and full speed's CPU energy preference. `rog-deck power setup` copies it to `/usr/local/libexec/rog-deck-power` with a polkit rule for the user; `bin/rog-deck` loads this file only to read its `LIMITS` table.
 - `docs/PLAN.md`: the original design notes.
@@ -16,6 +19,7 @@ How ROG Deck is put together, for anyone (or any agent) changing it. The user-fa
 
 ```bash
 node tests/model.test.js
+node tests/rooms.test.js
 node tests/update.test.js
 python3 -B -m unittest discover tests
 bin/rog-deck status | jq
@@ -24,11 +28,29 @@ omarchy-shell io.github.t3lluz.rog-deck status | jq
 
 ## Panel kit
 
-`SectionHeader`, `StatTile`, `ToggleTile`, `SwitchRow`, `Seg`, `Notice`, `LevelBar`, `OptionRow`, `Caption` and `UpdateSection` in `components/` are the panel kit: the same files, byte for byte, in ROG Deck, Batteries, Sonus and Server Dashboard, so the four look like one family. Change a kit file in all four or not at all. `Glyph.qml` is the one part each plugin owns: Nerd Font glyphs here, drawn Tabler icons in Batteries.
+`SectionHeader`, `StatTile`, `ToggleTile`, `SwitchRow`, `Seg`, `Notice`, `LevelBar`, `OptionRow`, `Caption` and `UpdateSection` in `components/` are the panel kit: the same files, byte for byte, in ROG Deck, Batteries, Sonus and Server Dashboard, so the four look like one family. Change a kit file in all four or not at all. `Glyph.qml` is the one part each plugin owns: here it looks the Nerd Font glyph up in `Rooms.PIXEL_GLYPHS` and draws its pixel icon, so the kit's icons match the rooms'. Map every glyph ROG Deck hands the kit there; `tests/rooms.test.js` fails on one that is missing. The one icon it cannot reach is the "Check now" button inside `UpdateSection`. A `Seg` types its icons, so give it none; a pick with icons is a `ChoiceRow`.
 
 `Updater.qml`, `Update.js` and `bin/plugin-update` are the shared updater (ROG Deck, Batteries and Server Dashboard; Sonus's engine updates itself the same way). It stashes local edits, untracked files too, before fast-forwarding, and drops the stash when the edits already are the update. `tests/update.test.js` and `tests/test_plugin_update.py` cover it.
 
 Panels never cut text: a `Notice` shows all of its message, a `Caption` breaks long words and paths, and a `ToggleTile` label that does not fit shows in full in its tooltip.
+
+## Panel look
+
+The panel is in the Rooms look Batteries 2.8 set and Sonus 1.8 carried (the brief is `files get key:roomstheme`): a room per part of the laptop, tinted in its own tone, numbers in a block face, pixel icons, motion that answers what happens. The settings page keeps the panel kit, so it matches the other plugins. Scaled through `Style`; the panel is `Style.space(520)` so two rooms share a row with their figures whole (about 478 on this machine).
+
+- Rooms: padding 10, joined by 3, `Style.cornerRadius`, the tone at 0.065 alpha, 0.11 under the pointer or while open. Cells inside a room (`ChoiceRow`) at 0.075, 0.2 and outlined for the one in use.
+- Tones (`Model.ROOM_TONES`, `Rooms.roomToneHex`): power blue, CPU and GPU cyan, fans magenta (cyan beside them, blue above), battery green (under the fans), graphics green, display yellow, keyboard cyan, AniMe magenta, the mark (the app icon's flame) yellow; the title room none. Neighbours never share one, beside or above (`tests/model.test.js` checks the grid in quarters). The theme's colour of that name from its `colors.toml` (read on each open) when it is a colour, else DailyDash's hue, softened 30% toward the text colour. Hot and low use `lowTone`, the theme's urgent colour where it reads on the background, and always come with a mark (`thermometer`, `battery-low`). Only the panel and the hover card take tones; the bar keeps the bar's colours, urgent only for 85 °C and up.
+- A room's header: pixel icon at `font.heading` × 1.25 in the tone, `font.body` bold name with a `font.caption` chevron that flips when open, a `font.caption` state line dimmed, the figure as `BigFigure` on the `font.bodySmall` grid with its unit (`W`, `%`, `Hz`, `°`) in the pixel type and a mark over it (`zap` while full speed holds or the battery charges, `plug` on the charger holding, `reload` for a GPU mode waiting on a restart). A state line stays short enough not to wrap past two lines in half a row: the figure carries the number.
+- Meters: cells across the room (ten for a level or a temperature, three for a light: Low, Med, High), track at 0.12, outline at 0.6, no nub. A limit is a 1 px tick. A light's meter picks by cell (`perCell`, `Rooms.cellAt`): a press anywhere in a cell is that level, never the nearest step to the pointer. Off is the button before it, which keeps the level dimmed. Limits (charge, CPU watts) snap to their step. Faders write once, on release.
+- The bar: the mode's icon, a CPU whose core grows with the mode (`cpu-silent`, `cpu-balanced`, `cpu-turbo`, drawn in the icon script to fill the square like the shell's own icons; Pixelarticons' `cpu` reads as a sun at twelve pixels), at the largest sharp size under the shell's icons, picked readings after it as pixel icon plus pixel type, 5 between items and 3 between an icon and its figure. Only the mode's name is a word in the bar's font. The hover card is a row per reading (`Model.hoverRows`).
+
+Motion, all on one clock (`entry` goes up on each open; `clock` ticks only while a ripple runs) and all off with reduced motion:
+
+- Opening: rooms rise 12 and fade in, 70 ms apart; meters fill from empty over 680 ms while their figures count up; state lines and readings decode; each icon plays its story (`Rooms.STORIES`: the mode's CPU hops, the thermometer, the battery and the matrix pulse, the GPU shakes, the keyboard is pressed, the flame wiggles, the fan spins through its two frames); the prompt types facts (`Model.heroPhrases`) a new one every 2.8 s. A GPU switch waiting on a restart or a missing asusd holds the prompt still; an open room makes it say what the room holds (`Model.roomLine`).
+- While open: the fan flips its frames while the fans spin, faster for faster fans (`Rooms.spinInterval`), and stops when they stop. Nothing else moves on its own.
+- Pointer: cells under it give; a click ripples through the room's meter, plays the icon again and opens the room, its drawer sliding over 280 ms. A new power mode plays the CPU's hop. Pages slide 18 px in from their side and the gear turns in 45° steps.
+
+Check layout at the panel's real width with long values and three-digit figures: `Style.space` scales. The offscreen audit (`files get key:roomstheme`, "Auditing offscreen") renders `RoomsPage`, `SettingsPage` and `FansPage` with a stand-in host.
 
 ## Rules that are easy to break
 
@@ -42,7 +64,8 @@ Panels never cut text: a `Notice` shows all of its message, a `Caption` breaks l
 - **Full speed only undoes its own change.** `speed on` (Balanced on the charger only, checked again in the backend) writes the `performance` energy preference and leaves a marker in `$XDG_RUNTIME_DIR/rog-deck/speed-held`; `speed off` hands the preference back to power-profiles-daemon's value only with that marker, so a preference the user set by hand in another mode stays. It never touches the governor: power-profiles-daemon owns that, and under the performance governor the kernel refuses preference writes, so `speed off` keeps the marker and waits for the next trigger while something holds that governor. It applies from `applyPower`, after power-profiles-daemon's own write on a mode or charger change has landed. A logout wipes the marker but not the preference. power-profiles-daemon never picks `performance` for Balanced, so the next `speed on` treats one in place as ROG Deck's and claims it; at worst the hand-back writes the daemon's own value.
 - **Refresh rate and hyprmoncfg:** save the rate into the profile the daemon will match, never into one with screens that aren't connected. `hold_rate` keeps a one-screen "Laptop" profile for that. Name the panel by description in any `hl.monitor` rule, through `monitor_output`, never by connector: a rule for the connector inherits `disabled = true` from a leftover Omarchy clamshell flag and blanks the panel.
 - **QML changes need `omarchy restart shell`.** Hot reload can keep the old component cached.
-- **Pure logic goes in `Model.js`** (a `.pragma library` with no QML) so `node tests/*.test.js` can run it. Change it with a test.
+- **Pure logic goes in `Model.js` or `components/Rooms.js`** (`.pragma library` files with no QML) so `node tests/*.test.js` can run it. Change it with a test.
+- **Pixel art stays sharp.** `Rectangle`s with `antialiasing: false`, positions in whole cells of the icon's own grid (`PixelIcon.cell`), never `scale` or a turn other than a quarter (the gear's eighths while it turns are the one exception). The fan turns by swapping frames, never by rotating.
 - Comments say why, in plain sentences. Match the surrounding code.
 
 ## Release

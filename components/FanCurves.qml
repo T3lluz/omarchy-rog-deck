@@ -13,6 +13,7 @@ Column {
   readonly property var status: deck ? deck.status : null
   readonly property var curves: service ? service.fanCurves : null
   readonly property var liveFans: status && status.fans ? status.fans : ({})
+  readonly property color tone: deck ? deck.toneOf("fans") : "white"
 
   // The mode whose curve is shown; follows the active mode until picked.
   property string pickedMode: ""
@@ -41,27 +42,27 @@ Column {
     fontFamily: tab.deck.fontFamily
   }
 
-  Seg {
-    width: parent.width
+  ChoiceRow {
+    host: tab.deck
+    tone: tab.tone
     options: tab.deck.profiles.map(function(p) {
-      return { value: p.key, label: p.label, icon: p.icon,
+      return { value: p.key, label: p.label, pixel: p.pixel,
                hint: p.key === tab.deck.activeProfile ? "The mode that is on now" : "Edit this mode's curve" }
     })
     value: tab.mode
-    foreground: tab.deck.fg
-    fontFamily: tab.deck.fontFamily
     onPicked: function(v) { tab.pickedMode = v }
   }
 
   SwitchRow {
     width: parent.width
     visible: !!tab.curveData
-    icon: "󰄪"
+    icon: ""
     label: "Custom curve for " + Model.profileInfo(tab.mode).label
     hint: tab.custom ? (tab.mode === tab.deck.activeProfile ? "Running now" : "Runs when " + Model.profileInfo(tab.mode).label + " is on")
                      : "Off: the firmware decides. Your curve is kept"
     checked: tab.custom
     foreground: tab.deck.fg
+    accent: tab.tone
     fontFamily: tab.deck.fontFamily
     onToggled: tab.service.setFanCustom(tab.mode, !tab.custom)
   }
@@ -69,17 +70,16 @@ Column {
   PanelSeparator { foreground: tab.deck.fg; visible: !!tab.curveData }
 
   // ---------- Curve ----------
-  Seg {
-    width: parent.width
+  ChoiceRow {
+    host: tab.deck
     visible: tab.fans.length > 1
-    bordered: false
+    tone: tab.tone
+    compact: true
     options: tab.fans.map(function(f) {
       var rpm = tab.liveFans[f]
-      return { value: f, icon: "󰈐", label: f.toUpperCase() + (rpm !== null && rpm !== undefined ? " · " + Model.rpm(rpm) : "") }
+      return { value: f, pixel: f === "gpu" ? "gpu" : "cpu", label: f.toUpperCase() + " fan" + (rpm !== null && rpm !== undefined ? " · " + Model.rpm(rpm) : "") }
     })
     value: tab.fan
-    foreground: tab.deck.fg
-    fontFamily: tab.deck.fontFamily
     onPicked: function(v) { tab.fan = v }
   }
 
@@ -92,7 +92,7 @@ Column {
     liveTemp: tab.status && tab.status.temps && tab.mode === tab.deck.activeProfile
       ? (tab.fan === "gpu" ? (tab.status.temps.gpu || -1) : (tab.status.temps.cpu || -1)) : -1
     foreground: tab.deck.fg
-    accent: tab.deck.accent
+    accent: tab.tone
     fontFamily: tab.deck.fontFamily
     onEdited: function(pts) { tab.service.setFanCurve(tab.mode, tab.fan, pts) }
   }
@@ -126,13 +126,12 @@ Column {
       anchors.verticalCenter: parent.verticalCenter
       spacing: Style.space(6)
 
-      Button {
+      PixelButton {
         id: prevPoint
-        iconText: "󰅁"
+        icon: "chevron-left"
         tooltipText: "Previous point"
         foreground: tab.deck.fg
         fontFamily: tab.deck.fontFamily
-        bordered: true
         onClicked: curve.selectedIndex = Math.max(0, pointEditor.index - 1)
       }
 
@@ -145,12 +144,11 @@ Column {
         font.pixelSize: Style.font.bodySmall
       }
 
-      Button {
-        iconText: "󰅂"
+      PixelButton {
+        icon: "chevron-right"
         tooltipText: "Next point"
         foreground: tab.deck.fg
         fontFamily: tab.deck.fontFamily
-        bordered: true
         onClicked: curve.selectedIndex = Math.min(curve.working.length - 1, pointEditor.index + 1)
       }
     }
@@ -160,14 +158,11 @@ Column {
       anchors.verticalCenter: parent.verticalCenter
       spacing: Style.space(6)
 
-      Text {
+      PixelIcon {
         anchors.verticalCenter: parent.verticalCenter
-        textFormat: Text.PlainText
-        text: "󰔏"
-        color: tab.deck.fg
-        opacity: 0.6
-        font.family: tab.deck.fontFamily
-        font.pixelSize: Style.font.body
+        name: "thermometer"
+        size: Style.font.body
+        color: tab.deck.dim
       }
 
       NumberField {
@@ -186,11 +181,18 @@ Column {
       Text {
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
-        text: "°C  󰈐"
+        text: "°C"
         color: tab.deck.fg
         opacity: 0.6
         font.family: tab.deck.fontFamily
         font.pixelSize: Style.font.body
+      }
+
+      PixelIcon {
+        anchors.verticalCenter: parent.verticalCenter
+        name: "fan"
+        size: Style.font.body
+        color: tab.deck.dim
       }
 
       NumberField {
@@ -242,7 +244,7 @@ Column {
 
   // ---------- Presets ----------
   SectionHeader {
-    icon: "󱐋"
+    icon: "󰈐"
     title: "PRESETS"
     detail: "BOTH FANS"
     foreground: tab.deck.fg
@@ -250,19 +252,14 @@ Column {
     visible: !!tab.curveData
   }
 
-  Seg {
-    width: parent.width
+  ChoiceRow {
+    host: tab.deck
     visible: !!tab.curveData
-    options: [
-      { value: "silent", label: "Silent", icon: "󰌪", hint: "Fans off until about 70 °C" },
-      { value: "stock", label: "Stock", icon: "󰈐", hint: "Close to the firmware curve" },
-      { value: "cool", label: "Cool", icon: "󰔏", hint: "Spins up early" },
-      { value: "max", label: "Max", icon: "󰓅", hint: "Full speed" },
-      { value: "reset", label: "Reset", icon: "󰑓", hint: "Firmware curve, custom off" }
-    ]
+    tone: tab.tone
+    compact: true
+    options: Model.FAN_PRESETS.map(function(p) { return { value: p.value, label: p.label, pixel: p.pixel, hint: p.hint } })
+      .concat([{ value: "reset", label: "Reset", pixel: "undo", hint: "The firmware's curve, custom off" }])
     value: ""
-    foreground: tab.deck.fg
-    fontFamily: tab.deck.fontFamily
     onPicked: function(v) {
       if (v === "reset") tab.service.resetFans(tab.mode)
       else tab.service.setFanPreset(tab.mode, v)

@@ -42,8 +42,9 @@ Item {
   property var settings: Model.defaultSettings()
   property bool settingsLoaded: false
   property string themeColour: ""
-  // The panel tab last shown; shared so every monitor's panel agrees.
-  property string panelTab: "main"
+  // A room or page an IPC call asked the panel to open on: a room's key,
+  // "settings" or "fans-curve". The panel takes it and clears it.
+  property string requestedRoom: ""
   // GPU mode waiting on the panel's restart prompt, or "".
   property string gpuAsk: ""
 
@@ -794,9 +795,13 @@ Item {
     }
     function toggle(): void { if (root.shell) root.shell.toggle(root.pluginId, "{}") }
     function open(): void { if (root.shell) root.shell.summon(root.pluginId, "{}") }
-    // Open the panel on one tab: main, lighting, anime, fans or system.
+    // Open the panel with a room open (power, battery, fans, display,
+    // graphics, keyboard, anime), or on settings or the fan curves. The old
+    // tab names still work: main, lighting, system.
     function openTab(name: string): string {
-      root.panelTab = name
+      var key = Model.roomForTab(name)
+      if (key === null) return "unknown"
+      root.requestedRoom = key
       if (root.shell) root.shell.summon(root.pluginId, "{}")
       return "ok"
     }
@@ -805,7 +810,7 @@ Item {
     function gpu(mode: string): string {
       if (!root.askGpuMode(mode)) return "unknown"
       if (root.gpuAsk === "") return "ok"
-      root.panelTab = "system"
+      root.requestedRoom = "graphics"
       if (root.shell) root.shell.summon(root.pluginId, "{}")
       return "ok"
     }

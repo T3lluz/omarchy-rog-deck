@@ -4,35 +4,36 @@
   <p>An Omarchy bar widget and control panel for <b>ASUS ROG</b> laptops, built on <a href="https://asus-linux.org/">asusctl/asusd</a>:<br/>
   power modes, temperatures and fans, keyboard lighting with auto-off, AniMe Matrix, FN-lock, battery limit and Battery saver, a CPU power limit for Silent, full speed when plugged in, display and GPU mode.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v0.9.0-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v1.0.0-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-ff8f6b" />
     <img alt="asusd 6" src="https://img.shields.io/badge/asusd-6-ff8f6b" />
     <a href="https://github.com/T3lluz/omarchy-rog-deck/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-rog-deck/actions/workflows/ci.yml/badge.svg" /></a>
     <img alt="License" src="https://img.shields.io/badge/license-MIT-34413e" />
   </p>
   <p><a href="#install"><b>Install</b></a> · <a href="#features">Features</a> · <a href="#shortcuts-and-ipc">Shortcuts</a> · <a href="#how-it-works">How it works</a></p>
-  <img src="assets/preview.png" width="400" alt="The ROG Deck panel: power modes, live fans and power, keyboard light" />
+  <img src="assets/preview.png" width="440" alt="The ROG Deck panel in rooms: the power mode, battery, fans, display, graphics, keyboard light and AniMe Matrix, each tinted in its own colour" />
 </div>
 
 ## Features
 
-- **The power mode in the bar:** the leaf, gauge and speedometer Omarchy's own power menu shows for Silent, Balanced and Turbo.
-- **Scroll the icon** to switch modes, middle-click it for the keyboard light, hover it for temperatures, fans and battery.
-- **Pick the bar stats** from a grid of switches in the System tab: the mode name, CPU and GPU temperature (tinted as they heat up), fan speed, package power, the NVIDIA GPU's state or draw, battery and refresh rate. None picked leaves the icon alone. The GPU temperature appears only while the dGPU is awake.
-- **Updates itself:** the System tab checks the plugin's GitHub every few hours and updates in place when you click Update. Local edits in the plugin folder, new files included, are kept in `git stash` rather than blocking the update, and dropped when they already are the new version.
-- **Banners over every tab** for what needs you: an error, a GPU switch waiting on a restart, or a new version.
+ROG Deck is one panel of rooms, the look Batteries and Sonus share: each part of the laptop sits in a tile tinted in its own colour from your Omarchy theme, numbers are set big in a block face, and every icon is the same sharp pixel art. Small rooms share a row. Rooms appear only for hardware your laptop has, and a missing one leaves its neighbour the space. A click opens a room to its details; the gear holds the settings.
+
+- **Power** (blue): the mode's CPU icon, its name, the package power as a big figure and the three modes as cells, one click each. Open it for what the running mode adds: in Silent a CPU power limit like G-Helper's, 15 to 35 W on a meter you drag (the boosts rise to the firmware's minimum, so 15 W holds 15 W sustained and boosts to 25 / 35 W); in Balanced, **Full speed when plugged in**, which gives the CPU its performance energy preference on the charger so it clocks up at once instead of ramping. The firmware only honours limits while the mode runs a custom fan curve, so the limit switches Silent's on (asusd's copy of the firmware curve, so the fans behave the same) and switching the limit off puts it back. The open room also says which mode Omarchy keeps for the charger and for battery.
+- **CPU and GPU** (cyan, most of a row): both temperatures in the block face, each over ten cells, with each part's fan speed under it and how hot the two run (Cool, Warm from 70 °C, Hot from 85 °C, with a mark so it never rests on colour alone). The GPU is read only while it is awake, so checking never wakes it.
+- **Fans** (magenta, a small tile beside the CPU and GPU): the faster fan's speed (4.3k), with the fan icon turning while the fans spin, faster for faster fans, and still when they stop. Hover it for the curve the running mode uses. Open it for that mode's custom curve, presets (Silent, Stock, Cool, Max, Reset) and the way into the curve editor: eight points per fan per mode, drag a bar or type a point's exact °C and %, with a marker at the live temperature. Curves go into asusd's own per-mode store, so the right one is on the fans whenever the mode changes.
+- **Battery** (green, a small tile under the fans, since [Batteries](https://github.com/T3lluz/omarchy-batteries) has the full story): the level, a bolt while it charges and a plug while it holds. Hover it for what the charger is doing; open it for the power flowing in or out, to drag where charging stops (20 to 100%), charge to full once, and turn on Battery saver: on battery, 60 Hz, panel overdrive off, screen power saving and Wi-Fi power save, all put back when the charger returns.
+- **Display** (yellow): the refresh rate. Open it to pick Auto (the top rate on the charger, 60 Hz on battery) or a fixed rate, panel overdrive, and screen power saving (amdgpu's panel power savings at level 3 on battery; power-profiles-daemon's own version waits for 50% battery, so Battery saver switches it off and sets the level itself).
+- **Graphics** (green): the GPU mode and whether the NVIDIA GPU is awake, asleep or off, with its draw while awake. Open it to switch between Integrated (NVIDIA off), Hybrid and Dedicated (MUX). A switch only takes hold on restart, so it asks first.
+- **Keyboard** (cyan): a button that turns the light off and back on, then three cells for Low, Med and High, each one click anywhere in the cell. Open it for auto-off after a set time without typing or touchpad use (15 s to 10 min), staying on while plugged in, dimming instead, and FN-lock.
+- **AniMe Matrix** (magenta): the same button and cells for its brightness. Open it to show the firmware's Banner or the ROG logo and to turn it off on battery, asleep or with the lid closed.
+
+**Settings** (the gear, or right-click the bar icon): what the bar shows, when the keyboard is lit (startup, awake, sleep, shutdown), RGB effects and colours, the AniMe Matrix's startup, sleep and shutdown animations, the boot sound, and the version and updates. A white-only keyboard stays on Static: asusd lists animated effects for those too, but they only pulse the white and can get stuck.
+
+- **The bar:** the mode as a pixel CPU whose core grows from Silent to Balanced to Turbo; scroll it to switch. Middle-click it for the keyboard light, hover it for a card with every reading. Readings you pick for the bar follow in the same pixel type: the mode name, CPU and GPU temperature (in the urgent colour from 85 °C), fan speed, package power, the NVIDIA GPU's state or draw, battery and refresh rate. Each room has the switches for its own readings; the settings page has them all.
+- **Motion:** opening the panel plays one short sequence: the rooms rise in, meters fill while their numbers count up, the lines under each name decode, each icon acts itself out, and the title's prompt types facts about the laptop. Then it holds still, apart from the fan while it runs. Clicks ripple through a room's cells. Omarchy's reduced motion setting stills all of it.
+- **Updates itself:** the settings page checks the plugin's GitHub every few hours and updates in place when you click Update. Local edits in the plugin folder, new files included, are kept in `git stash` rather than blocking the update, and dropped when they already are the new version.
+- **Banners** above the rooms for what needs you: an error, a GPU switch waiting on a restart, or a new version.
 - **Every monitor agrees:** one service owns the state, and the bar settings are read straight from `shell.json`, so a pick made on one screen shows on all of them and survives a restart.
-- Tabs appear only for hardware your laptop has.
-
-**Main** · Silent, Balanced and Turbo, plus the mode Omarchy keeps for AC and for battery. Live tiles for both fans, package power, battery, the dGPU (read without waking it) and the screen rate. In Silent, a CPU power limit like G-Helper's: one slider, 15–35 W sustained, with the boosts raised to the firmware's minimum (15 W holds 15 W sustained and boosts to 25 / 35 W). The firmware only honours limits while the mode runs a custom fan curve, so the limit switches Silent's on (asusd's copy of the firmware curve, so the fans behave the same) and switching the limit off puts it back. In Balanced, **Full speed when plugged in**: on the charger the CPU gets its performance energy preference, so it clocks up at once, as in Turbo, instead of ramping. On battery and in Silent the mode's own setting applies. Keyboard light, AniMe and FN-lock.
-
-**Keys** · Brightness. Auto-off after a set time without typing or touchpad use (5 s to 10 min), optionally staying on while plugged in or dimming instead. Light during boot, awake, sleep and shutdown. On RGB keyboards: effect, speed, and a colour that follows the Omarchy theme or one you pick. A white-only keyboard stays on Static: asusd lists animated effects for those too, but they only pulse the white and can get stuck.
-
-**AniMe** · Display on/off, the firmware's Banner or ROG Logo, brightness, startup/sleep/shutdown animations, and off on battery, asleep or with the lid closed.
-
-**Fans** · A curve per power mode, eight points per fan. Drag a bar or type a point's exact °C and %. Presets: Silent (off until about 70 °C), Stock, Cool, Max, plus Reset. A marker shows the live temperature. Curves go into asusd's own per-mode store, so the right one is on the fans whenever the mode changes.
-
-**System** · Charge limit 20–100 (slider or type it) and "Full once". Battery saver: on battery, 60 Hz, panel overdrive off, screen power saving and Wi-Fi power save, all put back when the charger returns; the switches show each change as it happens. Refresh rate: Auto (highest on AC, 60 Hz on battery) or fixed. Panel overdrive, screen power saving (amdgpu's panel power savings at level 3 on battery; power-profiles-daemon's own version waits for 50% battery, so Battery saver switches it off and sets the level itself), FN-lock, boot sound. GPU mode: Integrated (NVIDIA off), Hybrid or Dedicated (MUX); a switch only takes hold on restart, so it asks first. What the bar shows, whether the icon moves, the version and updates.
 
 ### In the background
 
@@ -75,7 +76,8 @@ omarchy-shell io.github.t3lluz.rog-deck anime toggle    # on | off | toggle
 omarchy-shell io.github.t3lluz.rog-deck saver toggle    # Battery saver: on | off | toggle
 omarchy-shell io.github.t3lluz.rog-deck fullSpeed on    # Full speed when plugged in: on | off | toggle
 omarchy-shell io.github.t3lluz.rog-deck toggle          # the panel, on the focused monitor
-omarchy-shell io.github.t3lluz.rog-deck openTab fans    # main | lighting | anime | fans | system
+omarchy-shell io.github.t3lluz.rog-deck openTab fans    # a room: power | battery | fans | display | graphics | keyboard | anime
+                                                        # or settings | curve (the fan curves)
 omarchy-shell io.github.t3lluz.rog-deck gpu hybrid      # integrated | hybrid | dedicated; asks before restarting
 omarchy-shell io.github.t3lluz.rog-deck status          # JSON snapshot
 omarchy-shell io.github.t3lluz.rog-deck version         # installed version
@@ -95,8 +97,9 @@ o.bind("XF86Launch4", "Next power mode", "omarchy-shell io.github.t3lluz.rog-dec
 
 - `bin/rog-deck` is the backend. `rog-deck status` returns everything as one JSON object in about 0.2 s, read from asusd's D-Bus API, power-profiles-daemon, sysfs and hyprctl. Every change is one `rog-deck` command; `bin/rog-deck --help` lists them.
 - `Service.qml` holds the state, the settings file and the background jobs, and owns the IPC target.
-- `Panel.qml` and `components/` draw the bar icon and panel, with the panel kit shared by all four plugins in this family.
-- `Model.js` holds the pure logic, tested under node.
+- `Panel.qml` and `components/` draw the bar icon, the hover card and the panel: a file per room, the Rooms pieces shared with Batteries and Sonus, and the panel kit shared by all four plugins in this family.
+- `Model.js` holds the pure logic and `components/Rooms.js` the look's (tones, the block face, the pixel type, meters, motion), both tested under node.
+- The icons are [Pixelarticons](https://pixelarticons.com) (MIT), plus a fan and the AniMe Matrix drawn on the same grid, built into `components/Pixels.js` by `scripts/fetch-pixel-icons.py`.
 
 Details that matter:
 
@@ -112,8 +115,10 @@ Details that matter:
 
 ```bash
 node tests/model.test.js
+node tests/rooms.test.js
 node tests/update.test.js
 python3 -B -m unittest discover tests
+python3 scripts/fetch-pixel-icons.py --show   # every icon's grids
 bin/rog-deck status | jq
 omarchy plugin validate .
 omarchy restart shell    # pick up QML changes

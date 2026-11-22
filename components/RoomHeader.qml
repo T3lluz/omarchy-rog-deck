@@ -16,6 +16,8 @@ Item {
   // While the panel is open, flip a frame this often (ms); 0 holds still.
   property int spinEvery: 0
   property color tone: host.fg
+  // The figure's colour, where it differs from the icon's (hot, low).
+  property color figureTone: tone
   property string title: ""
   property string status: ""
   property bool showFigure: true
@@ -153,7 +155,7 @@ Item {
     // Slides to a new reading rather than jumping to it.
     value: count.known ? count.shown : null
     suffix: head.suffix
-    tone: head.tone
+    tone: head.figureTone
     foreground: head.host.fg
     mark: head.mark
     dimmed: head.figureDimmed

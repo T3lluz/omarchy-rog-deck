@@ -223,6 +223,8 @@ assert.deepStrictEqual([5, 15, 40, 60, 100, null].map(Model.batteryPixel),
 // Fans: the GPU reads nothing while it sleeps, and says so.
 const fanned = Model.fanParts({ temps: { cpu: 88, gpu: null }, fans: { cpu: 3400, gpu: 0 }, dgpu: "suspended" })
 assert.deepStrictEqual(fanned.map(p => [p.key, p.state, p.hot]), [["cpu", "3.4k rpm", true], ["gpu", "asleep · fan off", false]])
+assert.deepStrictEqual(fanned.map(p => p.warmth), ["Hot", "Asleep"])
+assert.deepStrictEqual(Model.fanParts({ temps: { cpu: 64, gpu: 74 }, fans: { cpu: 2000, gpu: 2000 }, dgpu: "active" }).map(p => p.warmth), ["Cool", "Warm"])
 assert.strictEqual(Model.fansState(true, true), "Custom curve")
 assert.strictEqual(Model.heatState({ cpu: 61, gpu: null }), "Cool")
 assert.strictEqual(Model.heatState({ cpu: 66, gpu: 74 }), "Warm", "the hotter of the two")

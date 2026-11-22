@@ -574,13 +574,18 @@ function fanParts(status) {
   var f = status && status.fans ? status.fans : {}
   var parts = []
   function fanLine(value) { return value === null || value === undefined ? "no fan reading" : value === 0 ? "fan off" : rpm(value) + " rpm" }
+  // How warm, in a word, for the line under the part's name.
+  function warmth(temp, asleep) {
+    if (temp === null || temp === undefined) return asleep ? "Asleep" : "No reading"
+    return ["Cool", "Warm", "Hot"][heat(temp)]
+  }
   if (t.cpu !== undefined || f.cpu !== undefined)
     parts.push({ key: "cpu", label: "CPU", icon: "cpu", temp: t.cpu === undefined ? null : t.cpu, rpm: f.cpu === undefined ? null : f.cpu,
-                 state: fanLine(f.cpu), hot: heat(t.cpu) === 2 })
+                 state: fanLine(f.cpu), warmth: warmth(t.cpu, false), hot: heat(t.cpu) === 2 })
   if (t.gpu !== undefined || f.gpu !== undefined) {
     var asleep = (t.gpu === null || t.gpu === undefined) && status && status.dgpu !== "active"
     parts.push({ key: "gpu", label: "GPU", icon: "gpu", temp: t.gpu === undefined ? null : t.gpu, rpm: f.gpu === undefined ? null : f.gpu,
-                 state: (asleep ? "asleep · " : "") + fanLine(f.gpu), hot: heat(t.gpu) === 2 })
+                 state: (asleep ? "asleep · " : "") + fanLine(f.gpu), warmth: warmth(t.gpu, asleep), hot: heat(t.gpu) === 2 })
   }
   return parts
 }

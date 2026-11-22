@@ -3,9 +3,10 @@ import qs.Commons
 import "Rooms.js" as Rooms
 
 // A small room's content, for the two tiles stacked beside the CPU and GPU:
-// its icon on the left and its figure on the right, both centred, no name.
-// The icon says what it is, the room's tooltip names it and says its state,
-// and a click opens it like any room.
+// its icon and its figure side by side, centred in the tile as one group, no
+// name. The icon says what it is, the room's tooltip names it and says its
+// state, and a click opens it like any room. The figure is a size under the
+// rooms' own, as the tile is.
 Item {
   id: head
 
@@ -28,11 +29,14 @@ Item {
   property int tick: 0
   property real k: 1
   property int spinPhase: 0
+  readonly property real figureSize: Style.font.caption - 2
   readonly property var pose: Rooms.storyPose(story, k)
   readonly property string shownIcon: frames.length > 1
     ? frames[(spinPhase + (story === "spin" ? Rooms.spinFrame(k) : 0)) % frames.length] : icon
-  // What the tile needs side by side, for the stack's width.
-  readonly property real naturalWidth: iconBox.width + Style.space(8) + widest.implicitWidth
+  readonly property real gap: Style.space(7)
+  // The group at its widest figure (100%), so the stack's width holds still
+  // as the number changes.
+  readonly property real naturalWidth: iconBox.width + gap + widest.implicitWidth
 
   width: parent ? parent.width : 0
   implicitHeight: Math.max(iconBox.height, figure.implicitHeight)
@@ -55,16 +59,6 @@ Item {
     onTriggered: head.spinPhase = (head.spinPhase + 1) % 2
   }
 
-  // Moves in whole pixels of its own grid, so it never smears.
-  PixelIcon {
-    id: iconBox
-    y: Math.round((head.height - height) / 2)
-    name: head.shownIcon
-    size: head.host.iconColumn
-    color: head.dimmed ? head.host.dim : head.tone
-    transform: Translate { x: head.pose.x * iconBox.cell; y: head.pose.y * iconBox.cell }
-  }
-
   Counter {
     id: count
     host: head.host
@@ -72,23 +66,36 @@ Item {
     delay: head.delay
   }
 
-  BigFigure {
-    id: figure
-    anchors.right: parent.right
-    y: Math.round((head.height - implicitHeight) / 2)
-    // Slides to a new reading rather than jumping to it.
-    value: count.known ? count.shown : null
-    text: head.formatted ? head.formatted.text : ""
-    suffix: head.formatted ? head.formatted.suffix : head.suffix
-    tone: head.tone
-    foreground: head.host.fg
-    mark: head.mark
-    dimmed: head.dimmed
-    fontFamily: head.host.fontFamily
+  Row {
+    anchors.centerIn: parent
+    spacing: head.gap
+
+    // Moves in whole pixels of its own grid, so it never smears.
+    PixelIcon {
+      id: iconBox
+      anchors.verticalCenter: parent.verticalCenter
+      name: head.shownIcon
+      size: Style.font.heading
+      color: head.dimmed ? head.host.dim : head.tone
+      transform: Translate { x: head.pose.x * iconBox.cell; y: head.pose.y * iconBox.cell }
+    }
+
+    BigFigure {
+      id: figure
+      anchors.verticalCenter: parent.verticalCenter
+      // Slides to a new reading rather than jumping to it.
+      value: count.known ? count.shown : null
+      text: head.formatted ? head.formatted.text : ""
+      suffix: head.formatted ? head.formatted.suffix : head.suffix
+      tone: head.tone
+      foreground: head.host.fg
+      mark: head.mark
+      dimmed: head.dimmed
+      fontFamily: head.host.fontFamily
+      fontSize: head.figureSize
+    }
   }
 
-  // The widest figure the tile shows (100%), measured so the tile never
-  // narrows or widens as its number changes.
   BigFigure {
     id: widest
     visible: false
@@ -96,5 +103,6 @@ Item {
     suffix: "%"
     mark: "zap"
     fontFamily: head.host.fontFamily
+    fontSize: head.figureSize
   }
 }

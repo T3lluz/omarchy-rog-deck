@@ -17,6 +17,8 @@ Room {
   readonly property var info: Model.batteryRoom(battery, !!status && status.ac, !!service && service.saverActive)
   readonly property bool low: info.mark === "battery-low"
   readonly property real naturalWidth: tile.naturalWidth + pad * 2
+  // A tile is a size under a room: tighter round its small figure.
+  pad: Style.space(7)
 
   tone: host.toneOf("battery")
   expanded: host.openRoom === "battery"

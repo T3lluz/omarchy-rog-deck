@@ -19,6 +19,8 @@ Room {
   readonly property bool custom: curve && service ? !!service.pick("fans." + host.activeProfile, curve.custom) : false
   readonly property var fastest: Model.maxFan(status)
   readonly property real naturalWidth: tile.naturalWidth + pad * 2
+  // A tile is a size under a room: tighter round its small figure.
+  pad: Style.space(7)
 
   tone: host.toneOf("fans")
   expanded: host.openRoom === "fans"

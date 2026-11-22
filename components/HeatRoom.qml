@@ -3,10 +3,12 @@ import qs.Commons
 import "../Model.js" as Model
 import "Rooms.js" as Rooms
 
-// The CPU and the GPU side by side, most of a row wide, each its
-// temperature in the block face over ten cells of it (0 to 100 °C) and what
-// its fan does, under how hot the two run. The GPU reads nothing while it sleeps; it is never woken to read
-// it. Its drawer (HeatDrawer) holds the readings and their bar switches.
+// The CPU and the GPU side by side, most of a row wide. Each part is a header
+// of its own, as every room has one: its icon, its name over how warm it runs
+// (Cool, Warm, Hot, or Asleep for a GPU that is off), and its temperature in
+// the block face on the right, over ten cells of it (0 to 100 °C). The GPU
+// is never woken to read it. Its drawer (HeatDrawer) holds the fans, the
+// draw and the bar switches.
 Room {
   id: room
 
@@ -23,7 +25,6 @@ Room {
 
   tone: host.toneOf("heat")
   expanded: host.openRoom === "heat"
-  headerNatural: header.naturalHeight
   cells: {
     var out = []
     for (var i = 0; i < partRepeater.count; i++) {
@@ -34,25 +35,10 @@ Room {
   }
   onClicked: host.toggleRoom("heat")
 
-  RoomHeader {
-    id: header
-    host: room.host
-    minHeight: room.headerMin
-    icon: "thermometer"
-    tone: room.tone
-    title: "CPU and GPU"
-    status: Model.heatState(room.status ? room.status.temps : null)
-    showFigure: false
-    expanded: room.expanded
-    delay: room.delay + 120
-    story: Rooms.storyOf("heat")
-    tick: room.story
-  }
-
   Row {
     id: partRow
     width: parent.width
-    spacing: Style.space(14)
+    spacing: Style.space(16)
 
     Repeater {
       id: partRepeater
@@ -61,34 +47,28 @@ Room {
       Column {
         id: part
         required property int index
-        readonly property var modelData: room.parts[index] || ({ key: "", label: "", icon: "", temp: null, state: "", hot: false })
+        readonly property var modelData: room.parts[index] || ({ key: "", label: "", icon: "", temp: null, warmth: "", hot: false })
         readonly property alias meter: partMeter
         readonly property bool known: Rooms.hasLevel(modelData.temp)
         width: (partRow.width - partRow.spacing * (room.partKeys.length - 1)) / Math.max(1, room.partKeys.length)
-        spacing: Style.space(4)
+        spacing: Style.space(8)
 
-        // The part's own icon, the chip or the graphics card, beside its
-        // temperature; its name goes in the line under the meter, so a
-        // narrow cell never squeezes the two together.
-        Row {
-          spacing: Style.space(6)
-
-          PixelIcon {
-            anchors.verticalCenter: parent.verticalCenter
-            name: part.modelData.icon
-            size: Style.font.title
-            color: part.known ? room.tone : room.host.dim
-          }
-
-          BigFigure {
-            anchors.verticalCenter: parent.verticalCenter
-            value: part.known ? partMeter.shown : null
-            suffix: "°"
-            tone: part.modelData.hot ? room.host.lowTone : room.tone
-            foreground: room.host.fg
-            mark: part.modelData.hot ? "thermometer" : ""
-            fontFamily: room.host.fontFamily
-          }
+        RoomHeader {
+          host: room.host
+          icon: part.modelData.icon
+          tone: room.tone
+          figureTone: part.modelData.hot ? room.host.lowTone : room.tone
+          title: part.modelData.label
+          status: part.modelData.warmth
+          value: part.known ? part.modelData.temp : null
+          suffix: "°"
+          figureDimmed: !part.known
+          dimmed: !part.known
+          mark: part.modelData.hot ? "thermometer" : ""
+          expanded: room.expanded
+          delay: room.delay + 120 + part.index * 60
+          story: Rooms.storyOf("heat")
+          tick: room.story
         }
 
         Meter {
@@ -101,17 +81,6 @@ Room {
           tone: part.modelData.hot ? room.host.lowTone : room.tone
           foreground: room.host.fg
           delay: room.delay + 80 + part.index * 60
-        }
-
-        Decode {
-          host: room.host
-          width: parent.width
-          wrapMode: Text.Wrap
-          value: part.modelData.label + " · " + part.modelData.state
-          delay: room.delay + 160
-          color: room.host.dim
-          font.family: room.host.fontFamily
-          font.pixelSize: Style.font.caption
         }
       }
     }

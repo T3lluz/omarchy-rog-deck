@@ -159,6 +159,6 @@ Item {
     foreground: head.host.fg
     mark: head.mark
     dimmed: head.figureDimmed
-    fontFamily: head.host.fontFamily
+    fontFamily: head.host.gridFamily
   }
 }

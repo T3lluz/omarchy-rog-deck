@@ -36,7 +36,20 @@ Panel {
   readonly property color dim: Qt.darker(fg, 1.5)
   readonly property color accent: Commons.Color.accent
   readonly property color urgent: bar ? bar.urgent : Commons.Color.urgent
-  readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
+  // Every word ROG Deck draws is in Monocraft, a pixel font that matches the
+  // pixel icons and figures. It ships in assets/fonts, so it needs no system
+  // install. The bold face is loaded too, so bold text uses Monocraft's own
+  // bold instead of a smeared synthetic one. Until it loads, or if it can't,
+  // text falls back to the bar's font.
+  FontLoader { id: monocraft; source: Qt.resolvedUrl("assets/fonts/Monocraft.ttf") }
+  FontLoader { id: monocraftBold; source: Qt.resolvedUrl("assets/fonts/Monocraft-Bold.ttf") }
+  readonly property string fontFamily: monocraft.status === FontLoader.Ready ? monocraft.name
+    : bar ? bar.fontFamily : Style.font.family
+  // The block-face figures (BigFigure) take their cell size from a font's
+  // digits and line height. They keep the bar's font for that, so the
+  // figures stay the size they were drawn for; Monocraft's wider, shorter
+  // cells squashed them.
+  readonly property string gridFamily: bar ? bar.fontFamily : Style.font.family
   readonly property bool vertical: bar ? bar.vertical : false
 
   // Rooms are padded 10 and joined by 3, as in Batteries and Sonus; their
@@ -430,7 +443,7 @@ Panel {
             textFormat: Text.PlainText
             text: parent.modelData.word
             color: parent.ink
-            font.family: button.fontFamily
+            font.family: root.fontFamily
             font.pixelSize: button.fontSize
             renderType: Text.NativeRendering
           }
@@ -477,7 +490,7 @@ Panel {
     note: root.hoverNote
     palette: root.palette
     unit: root.pixelUnit
-    fontFamily: button.fontFamily
+    fontFamily: root.fontFamily
   }
 
   // ---- panel -------------------------------------------------------------------------

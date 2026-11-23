@@ -4,7 +4,7 @@
   <p>An Omarchy bar widget and control panel for <b>ASUS ROG</b> laptops, built on <a href="https://asus-linux.org/">asusctl/asusd</a>:<br/>
   power modes, temperatures and fans, keyboard lighting with auto-off, AniMe Matrix, FN-lock, battery limit and Battery saver, a CPU power limit for Silent, full speed when plugged in, display and GPU mode.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v1.0.2-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v1.0.3-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-ff8f6b" />
     <img alt="asusd 6" src="https://img.shields.io/badge/asusd-6-ff8f6b" />
     <a href="https://github.com/T3lluz/omarchy-rog-deck/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-rog-deck/actions/workflows/ci.yml/badge.svg" /></a>
@@ -100,6 +100,7 @@ o.bind("XF86Launch4", "Next power mode", "omarchy-shell io.github.t3lluz.rog-dec
 - `Panel.qml` and `components/` draw the bar icon, the hover card and the panel: a file per room, the Rooms pieces shared with Batteries and Sonus, and the panel kit shared by all four plugins in this family.
 - `Model.js` holds the pure logic and `components/Rooms.js` the look's (tones, the block face, the pixel type, meters, motion), both tested under node.
 - The icons are [Pixelarticons](https://pixelarticons.com) (MIT), plus a fan and the AniMe Matrix drawn on the same grid, built into `components/Pixels.js` by `scripts/fetch-pixel-icons.py`.
+- The text is in [Monocraft](https://github.com/IdreesInc/Monocraft) 4.2.1, bundled in `assets/fonts/` with its license (SIL OFL 1.1) and loaded by `Panel.qml`, so nothing needs installing.
 
 Details that matter:
 
@@ -134,6 +135,6 @@ See [AGENTS.md](AGENTS.md) for how the pieces fit. [docs/PLAN.md](docs/PLAN.md) 
 
 ## License
 
-MIT. Not affiliated with ASUS or Republic of Gamers.
+MIT, except the Monocraft font in `assets/fonts/`, which is under the SIL Open Font License 1.1 (`assets/fonts/OFL.txt`). Not affiliated with ASUS or Republic of Gamers.
 
 One of a set of Omarchy plugins: [Batteries](https://github.com/T3lluz/omarchy-batteries) · **ROG Deck** · [Sonus](https://github.com/T3lluz/omarchy-sonus) · [Server Dashboard](https://github.com/T3lluz/omarchy-server-dashboard)

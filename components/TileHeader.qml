@@ -91,7 +91,7 @@ Item {
       foreground: head.host.fg
       mark: head.mark
       dimmed: head.dimmed
-      fontFamily: head.host.fontFamily
+      fontFamily: head.host.gridFamily
       fontSize: head.figureSize
     }
   }
@@ -102,7 +102,7 @@ Item {
     value: 100
     suffix: "%"
     mark: "zap"
-    fontFamily: head.host.fontFamily
+    fontFamily: head.host.gridFamily
     fontSize: head.figureSize
   }
 }

@@ -633,7 +633,9 @@ function fanFacts(status) {
 // What the graphics room says: the NVIDIA GPU's state, or the mode waiting
 // on a restart.
 function graphicsState(gpu, dgpu, dgpuWatts, next) {
-  if (gpu && next && next !== gpu.mode) return gpuModeInfo(next).label + " after a restart"
+  // Short enough for half a row beside the figure: the mark over the figure
+  // and the banner say the rest.
+  if (gpu && next && next !== gpu.mode) return gpuModeInfo(next).label + " on restart"
   // Its draw is the room's figure, so the line leaves it out.
   if (dgpu === "active") return "NVIDIA awake"
   if (dgpu === "suspended") return "NVIDIA asleep"

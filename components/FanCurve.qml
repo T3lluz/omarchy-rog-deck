@@ -115,7 +115,7 @@ Item {
         Behavior on height { enabled: !chart.dragging; NumberAnimation { duration: 160 } }
       }
 
-      Text {
+      MonoText {
         anchors.horizontalCenter: parent.horizontalCenter
         y: Math.max(0, chart.plotHeight - chart.plotHeight * point.p / 100 - height - Style.space(2))
         visible: chart.dragging && chart.activeIndex === index
@@ -127,7 +127,7 @@ Item {
         font.bold: true
       }
 
-      Text {
+      MonoText {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         textFormat: Text.PlainText

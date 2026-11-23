@@ -152,6 +152,21 @@ assert.strictEqual(Rooms.faderValue(240, 300, 0, 100, 5, 20), 80)
 // The CPU limit in watts.
 assert.strictEqual(Rooms.faderValue(150, 300, 15, 35, 1), 25)
 
+// ---- text
+
+// Every text ROG Deck draws itself is a MonoText: Monocraft unsmoothed, so its
+// strokes land on whole device pixels. The panel kit's files are shared with
+// the other plugins and keep their own; BigFigure's hidden "0000000000" only
+// measures the bar font, and Glyph's Text types a glyph with no pixel icon.
+const KIT = ["SectionHeader", "StatTile", "ToggleTile", "SwitchRow", "Seg", "Notice", "LevelBar", "OptionRow", "Caption", "UpdateSection"]
+const PLAIN_TEXT_OK = { "BigFigure.qml": 1, "Glyph.qml": 1, "MonoText.qml": 1 }
+for (const file of qmlFiles) {
+  const base = path.basename(file)
+  if (KIT.includes(base.replace(".qml", ""))) continue
+  const plain = (fs.readFileSync(file, "utf8").match(/^\s*Text \{/gm) || []).length
+  assert.strictEqual(plain, PLAIN_TEXT_OK[base] || 0, base + " draws its text with MonoText")
+}
+
 // ---- motion
 
 // An icon's cells as a set of "x,y" on one grid.

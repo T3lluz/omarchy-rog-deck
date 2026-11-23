@@ -33,7 +33,7 @@ Column {
     width: parent.width
     height: Math.max(labelText.implicitHeight, valueText.implicitHeight)
 
-    Text {
+    MonoText {
       id: labelText
       anchors.left: parent.left
       anchors.right: valueText.left
@@ -46,7 +46,7 @@ Column {
       font.pixelSize: Style.font.bodySmall
     }
 
-    Text {
+    MonoText {
       id: valueText
       anchors.right: parent.right
       textFormat: Text.PlainText

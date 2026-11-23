@@ -445,7 +445,7 @@ Panel {
             color: parent.ink
           }
 
-          Text {
+          MonoText {
             visible: parent.modelData.word !== ""
             anchors.verticalCenter: parent.verticalCenter
             textFormat: Text.PlainText

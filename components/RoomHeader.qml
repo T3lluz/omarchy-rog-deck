@@ -72,7 +72,7 @@ Item {
       width: parent.width
       height: titleText.height
 
-      Text {
+      MonoText {
         id: titleText
         readonly property real room: chevron.visible ? chevron.width + Style.space(5) : 0
         property real lastRight: 0

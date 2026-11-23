@@ -245,7 +245,7 @@ assert.strictEqual(Model.fansState(false, false), "Reading the curves")
 
 // Graphics, display, keyboard, AniMe lines.
 assert.strictEqual(Model.graphicsState({ mode: "hybrid" }, "active", 12.3, "hybrid"), "NVIDIA awake", "its draw is the figure")
-assert.strictEqual(Model.graphicsState({ mode: "hybrid" }, "suspended", null, "integrated"), "Integrated after a restart")
+assert.strictEqual(Model.graphicsState({ mode: "hybrid" }, "suspended", null, "integrated"), "Integrated on restart")
 assert.strictEqual(Model.displayState("auto", false, true), "Auto rate")
 assert.strictEqual(Model.displayState("auto", true, false), "Battery saver")
 assert.strictEqual(Model.keyboardState(2, { enabled: true, timeout: 60, dimOnly: false }, true), "Off after 1 min · FN\u2011lock")

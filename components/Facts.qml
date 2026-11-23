@@ -32,7 +32,7 @@ Grid {
       width: factGrid.cellWidth
       implicitHeight: Math.max(pairLabel.implicitHeight, pairValue.implicitHeight)
 
-      Text {
+      MonoText {
         id: pairLabel
         width: Math.min(implicitWidth, pair.width * 0.55)
         wrapMode: Text.Wrap

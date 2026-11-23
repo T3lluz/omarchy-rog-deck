@@ -79,7 +79,7 @@ Row {
           color: cell.current ? choices.tone : Qt.rgba(choices.tone.r, choices.tone.g, choices.tone.b, 0.8)
         }
 
-        Text {
+        MonoText {
           anchors.verticalCenter: parent.verticalCenter
           width: Math.min(implicitWidth, cell.width - Style.space(8) - (cellIcon.visible ? cellIcon.width + content.spacing : 0))
           horizontalAlignment: Text.AlignHCenter

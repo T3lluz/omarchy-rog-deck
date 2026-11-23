@@ -135,7 +135,7 @@ Column {
         onClicked: curve.selectedIndex = Math.max(0, pointEditor.index - 1)
       }
 
-      Text {
+      MonoText {
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: "Point " + (pointEditor.index + 1) + "/" + curve.working.length
@@ -179,7 +179,7 @@ Column {
         onModified: function(v) { pointEditor.queue(v, pointEditor.point.p) }
       }
 
-      Text {
+      MonoText {
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: "°C"
@@ -210,7 +210,7 @@ Column {
         onModified: function(v) { pointEditor.queue(pointEditor.point.t, v) }
       }
 
-      Text {
+      MonoText {
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: "%"
@@ -231,7 +231,7 @@ Column {
     fontFamily: tab.deck.fontFamily
   }
 
-  Text {
+  MonoText {
     width: parent.width
     visible: !tab.curveData
     textFormat: Text.PlainText

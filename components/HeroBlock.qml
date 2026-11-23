@@ -78,7 +78,7 @@ Item {
   }
 
   // Measures two real lines of the prompt, for the room it always keeps.
-  Text {
+  MonoText {
     id: twoLines
     visible: false
     textFormat: Text.PlainText
@@ -108,7 +108,7 @@ Item {
       width: parent.width
       height: Math.max(titleText.implicitHeight, actionRow.implicitHeight)
 
-      Text {
+      MonoText {
         id: titleText
         anchors.left: parent.left
         anchors.right: actionRow.left
@@ -141,7 +141,7 @@ Item {
       width: parent.width
       height: Math.max(lineText.implicitHeight, twoLines.implicitHeight)
 
-      Text {
+      MonoText {
         id: promptSign
         textFormat: Text.PlainText
         text: "❯"
@@ -150,7 +150,7 @@ Item {
         font.pixelSize: Style.font.caption
       }
 
-      Text {
+      MonoText {
         id: lineText
         anchors.left: promptSign.right
         anchors.leftMargin: Style.space(6)

@@ -23,7 +23,7 @@ Column {
     icon: ""
     label: "Turn off when idle"
     hint: drawer.idle.enabled
-      ? "Goes dark after " + Model.formatSeconds(drawer.idle.timeout) + " without typing or touchpad, back on the next key press"
+      ? "Dark after " + Model.formatSeconds(drawer.idle.timeout) + " without typing or touchpad; any key wakes it"
       : "The light stays as you set it"
     checked: drawer.idle.enabled
     foreground: drawer.host.fg

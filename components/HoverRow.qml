@@ -37,7 +37,7 @@ Rectangle {
     color: hoverRow.entry.dimmed ? hoverRow.quiet : hoverRow.tone
   }
 
-  Text {
+  MonoText {
     id: name
     anchors.left: icon.right
     anchors.leftMargin: Style.space(6)

@@ -102,7 +102,7 @@ PopupWindow {
         }
       }
 
-      Text {
+      MonoText {
         visible: card.note !== ""
         width: list.width
         topPadding: Style.space(3)

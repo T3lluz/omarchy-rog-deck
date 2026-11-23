@@ -257,7 +257,7 @@ Column {
         fontFamily: page.host.fontFamily
       }
 
-      Text {
+      MonoText {
         id: slotLabel
         anchors.left: slotIcon.right
         anchors.leftMargin: Style.space(10)

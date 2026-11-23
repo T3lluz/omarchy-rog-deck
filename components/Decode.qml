@@ -4,7 +4,7 @@ import "Rooms.js" as Rooms
 
 // Text that decodes into place, a terminal's way, when the panel opens.
 // Later changes just swap, so a line that changes stays easy to read.
-Text {
+MonoText {
   id: dec
 
   required property var host

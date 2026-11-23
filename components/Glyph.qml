@@ -21,8 +21,14 @@ Item {
   implicitWidth: size
   implicitHeight: size
 
+  // Plays as its page comes into view, top to bottom, and again when the
+  // kit swaps its glyph (a switch flipping).
   PixelIcon {
+    id: pixelIcon
     visible: glyph.pixel !== ""
+    playOnShow: true
+    showDelay: Math.min(420, Math.max(0, Math.round(glyph.mapToItem(null, 0, 0).y * 0.6)))
+    onNameChanged: play(0)
     anchors.centerIn: parent
     name: glyph.pixel
     size: glyph.size

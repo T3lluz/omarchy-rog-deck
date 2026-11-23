@@ -402,12 +402,20 @@ Panel {
       anchors.centerIn: parent
       spacing: Style.space(5)
 
-      // The mode's icon: scrolling swings the dial's needle.
+      // The mode's icon: a new mode (a scroll, a click in the panel) swings
+      // the dial's needle or drifts the leaf, and so does the pointer
+      // arriving.
       PixelIcon {
+        id: modeIcon
         anchors.verticalCenter: parent.verticalCenter
         name: root.activeInfo.pixel
         unit: root.iconUnit
         color: root.barFg
+        onNameChanged: play(0)
+        Connections {
+          target: button
+          function onTooltipHoveredChanged() { if (button.tooltipHovered) modeIcon.play(0) }
+        }
       }
 
       // One item per stat: its pixel icon, then the figure in the pixel type,

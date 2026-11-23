@@ -16,6 +16,9 @@ Rectangle {
   property color foreground: "white"
   property int unit: 2
   property string fontFamily: Style.font.family
+  // How long after the card shows this row's icon plays, so they go down
+  // the card one after another.
+  property int delay: 0
   readonly property bool hasLevel: Rooms.hasLevel(hoverRow.entry.level)
   readonly property color quiet: Qt.darker(foreground, 1.5)
 
@@ -28,6 +31,8 @@ Rectangle {
     x: Style.space(6)
     anchors.verticalCenter: parent.verticalCenter
     name: hoverRow.entry.icon || ""
+    playOnShow: true
+    showDelay: hoverRow.delay
     size: Style.font.body
     color: hoverRow.entry.dimmed ? hoverRow.quiet : hoverRow.tone
   }
@@ -61,6 +66,8 @@ Rectangle {
       id: markIcon
       visible: !!hoverRow.entry.mark
       name: hoverRow.entry.mark || "zap"
+      playOnShow: true
+      showDelay: hoverRow.delay + 120
       size: Style.font.body
       color: hoverRow.tone
     }

@@ -162,6 +162,7 @@ Column {
         anchors.verticalCenter: parent.verticalCenter
         name: "thermometer"
         size: Style.font.body
+        playOnShow: true
         color: tab.deck.dim
       }
 
@@ -192,6 +193,7 @@ Column {
         anchors.verticalCenter: parent.verticalCenter
         name: "fan"
         size: Style.font.body
+        playOnShow: true
         color: tab.deck.dim
       }
 

@@ -98,6 +98,7 @@ PopupWindow {
           foreground: card.foreground
           unit: card.unit
           fontFamily: card.fontFamily
+          delay: 80 + index * 70
         }
       }
 

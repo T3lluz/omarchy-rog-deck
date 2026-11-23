@@ -1,7 +1,6 @@
 import QtQuick
 import qs.Commons
 import "../Model.js" as Model
-import "Rooms.js" as Rooms
 
 // The power mode: its icon, its name over what the charger and the mode's
 // own option are doing, and the package power in the block face. The modes
@@ -42,12 +41,6 @@ Room {
   expanded: host.openRoom === "power"
   onClicked: host.toggleRoom("power")
 
-  // A new mode swings the needle: the icon plays its story.
-  Connections {
-    target: room.host
-    function onActiveProfileChanged() { if (room.host.opened) room.story++ }
-  }
-
   RoomHeader {
     id: header
     host: room.host
@@ -61,8 +54,9 @@ Room {
     mark: Model.powerMark(room.ctx)
     expanded: room.expanded
     delay: room.delay + 120
-    story: Rooms.storyOf("power")
     tick: room.story
+    // A new mode swings the needle.
+    cue: room.host.activeProfile
   }
 
   ChoiceRow {

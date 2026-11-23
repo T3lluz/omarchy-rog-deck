@@ -2,7 +2,7 @@
 
 // The Rooms look's pure logic, kept free of QML so tests/rooms.test.js can
 // run it under node: room tones, the block face and the pixel type, the cells
-// of a meter, the icon stories, the decode and the prompt's reveal. Batteries
+// of a meter, the decode and the prompt's reveal. Batteries
 // 2.8 set the look and Sonus 1.8 carried it; this is their code with ROG
 // Deck's icons. Icons are names in Pixels.js (pixel art). The panel kit is
 // handed Nerd Font glyphs, which Glyph.qml swaps for their pixel icons
@@ -16,7 +16,7 @@ function hasLevel(level) {
 
 // Every pixel icon the QML names outside the model, for the test that checks
 // they all exist in Pixels.js.
-var UI_PIXELS = ["chevron-down", "settings-cog", "arrow-left", "check", "fire", "fan", "fan-2", "cpu",
+var UI_PIXELS = ["chevron-down", "settings-cog", "arrow-left", "check", "fire", "fan", "cpu",
   "chevron-left", "chevron-right", "reload"]
 
 // The Nerd Font glyphs ROG Deck hands the panel kit, each with its pixel
@@ -349,65 +349,7 @@ function revealLine(line, typed, cursorOn) {
 
 // ---------------------------------------------------------------- motion
 
-// What each room's icon acts out when the room comes in or is clicked, after
-// DailyDash's AnimatedIcon: only that motion, ending exactly where it began.
-// The mode's dial hops, the fan spins (it flips its frames), the
-// thermometer, the battery and the matrix pulse, the GPU shakes, the screen pops, the
-// keyboard is pressed, the flame wiggles.
-var STORIES = {
-  power: "hop",
-  heat: "pulse",
-  battery: "pulse",
-  fans: "spin",
-  graphics: "shake",
-  display: "pop",
-  keyboard: "press",
-  anime: "pulse",
-  mark: "wiggle"
-}
-
-function storyOf(room) {
-  return STORIES[room] || "pop"
-}
-
-// The icon's pose `k` of the way through its story (0..1): an offset in
-// whole pixels of the icon's own grid, so pixel art never smears. A spin
-// moves nothing; the fan turns by its frames instead (spinFrame).
-function storyPose(story, k) {
-  var pose = { x: 0, y: 0 }
-  if (!(k > 0 && k < 1)) return pose
-  var arc = Math.sin(Math.PI * k)
-  var fade = 1 - k
-  if (story === "hop") pose.y = -Math.round(arc * 3)
-  else if (story === "wiggle") pose.x = Math.round(Math.sin(k * Math.PI * 3) * 1.6 * fade)
-  else if (story === "press") pose.y = Math.round(arc * 1.2)
-  else if (story === "tilt") pose.x = Math.round(Math.sin(k * Math.PI * 2) * 2 * fade)
-  else if (story === "pulse") pose.y = -Math.round(Math.abs(Math.sin(k * Math.PI * 2)) * 1.4)
-  else if (story === "shake") pose.x = Math.round(Math.sin(k * Math.PI * 4) * 2 * fade)
-  else if (story === "buzz") pose.x = Math.round(Math.sin(k * Math.PI * 10) * 1.6 * fade)
-  else if (story === "spin") return pose
-  else pose.y = -Math.round(arc * 2)
-  // No negative zero: a pose at rest equals { x: 0, y: 0 }.
-  pose.x += 0
-  pose.y += 0
-  return pose
-}
-
-// Which of the fan's two frames shows `k` of the way through a spin: six
-// flips, fast first and slowing, ending on the first frame, where it began.
-function spinFrame(k) {
-  if (!(k > 0 && k < 1)) return 0
-  var turned = Math.floor((1 - Math.pow(1 - k, 2)) * 7)
-  return turned % 2
-}
-
-// How often the fan flips a frame while the panel is open and the fans run,
-// in ms: faster for faster fans, never quicker than the eye can follow, and
-// never while they stand still (0).
-function spinInterval(rpm) {
-  if (!(rpm > 0)) return 0
-  return Math.round(Math.max(140, Math.min(520, 900 - rpm / 10)))
-}
+// How the icons move is in Motion.js.
 
 // Text arriving the way a terminal decodes it: the first `progress` of it
 // is real, the rest cycles through glyphs. Spaces and separators stay put so

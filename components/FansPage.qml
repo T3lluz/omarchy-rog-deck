@@ -19,7 +19,6 @@ Column {
     icon: "fan"
     iconColor: page.host.toneOf("fans")
     markSize: Math.round(Style.font.title * 1.5)
-    story: "pop"
     title: "Fan curves"
     line: "Each mode keeps a curve of its own"
     keepLines: 1

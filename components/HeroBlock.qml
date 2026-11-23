@@ -12,7 +12,6 @@ Item {
   required property var host
   property string icon: "fire"
   property color iconColor: host.fg
-  property string story: "wiggle"
   property real markSize: Style.font.display
   property string title: ""
   property string line: ""
@@ -32,9 +31,6 @@ Item {
 
   property int typed: 0
   property bool cursorOn: true
-  property int tick: 0
-  property real k: 1
-  readonly property var pose: Rooms.storyPose(story, k)
   readonly property string revealed: Rooms.revealLine(line, typed, cursorOn)
 
   implicitHeight: Math.max(mark.height, labels.implicitHeight)
@@ -43,7 +39,7 @@ Item {
     typedKey = lineKey
     typedLength = line.length
     typed = Style.reduceMotion ? line.length : 0
-    tick++
+    mark.play(0)
   }
 
   onLineChanged: Qt.callLater(hero.retype)
@@ -59,7 +55,6 @@ Item {
     else typed = 0
   }
   onInstantChanged: if (instant) typed = line.length
-  onTickChanged: if (!Style.reduceMotion) storyRun.restart()
   // A page coming into view types its line out and plays its mark again.
   onVisibleChanged: if (visible && host.opened) arrive()
 
@@ -82,15 +77,6 @@ Item {
     onTriggered: hero.cursorOn = !hero.cursorOn
   }
 
-  NumberAnimation {
-    id: storyRun
-    target: hero
-    property: "k"
-    from: 0
-    to: 1
-    duration: Style.duration(660)
-  }
-
   // Measures two real lines of the prompt, for the room it always keeps.
   Text {
     id: twoLines
@@ -108,7 +94,6 @@ Item {
     name: hero.icon
     size: hero.markSize
     color: hero.iconColor
-    transform: Translate { x: hero.pose.x * mark.cell; y: hero.pose.y * mark.cell }
   }
 
   Column {

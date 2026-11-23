@@ -1,7 +1,6 @@
 import QtQuick
 import qs.Commons
 import "../Model.js" as Model
-import "Rooms.js" as Rooms
 
 // The keyboard light: a button that turns it off and back on, then its level
 // as three cells (Low, Med, High), each one click. Its drawer
@@ -35,8 +34,9 @@ Room {
     showFigure: false
     expanded: room.expanded
     delay: room.delay + 120
-    story: Rooms.storyOf("keyboard")
     tick: room.story
+    // A new level sweeps the keys.
+    cue: String(room.level)
   }
 
   LightFader {

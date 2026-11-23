@@ -92,9 +92,15 @@ Item {
     implicitWidth: Math.max(unitText.implicitWidth, markIcon.implicitWidth)
     height: figure.implicitHeight
 
+    // A mark plays as it appears. Hot keeps the mercury climbing and a GPU
+    // switch waiting on a restart keeps its arrow going round, now and then,
+    // since both wait on something.
     PixelIcon {
       id: markIcon
       visible: figure.mark !== ""
+      loop: figure.mark === "thermometer" || figure.mark === "reload" ? "burst" : ""
+      loopEvery: figure.mark === "thermometer" ? 2400 : 4800
+      onNameChanged: if (name !== "") play(0)
       anchors.horizontalCenter: parent.horizontalCenter
       y: figure.unitTop ? parent.height - height : 0
       name: figure.mark

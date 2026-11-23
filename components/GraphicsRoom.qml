@@ -1,7 +1,6 @@
 import QtQuick
 import qs.Commons
 import "../Model.js" as Model
-import "Rooms.js" as Rooms
 
 // The GPU mode and what the NVIDIA GPU is doing, with its draw in the block
 // face while it is awake (it is never woken to read it; its temperature is
@@ -36,7 +35,8 @@ Room {
     mark: room.gpu && room.next !== room.gpu.mode ? "reload" : ""
     expanded: room.expanded
     delay: room.delay + 120
-    story: Rooms.storyOf("graphics")
     tick: room.story
+    // A new mode, or the NVIDIA GPU waking or sleeping, turns its fans.
+    cue: (room.gpu ? room.gpu.mode + room.next : "") + "/" + (room.status ? room.status.dgpu : "")
   }
 }

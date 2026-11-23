@@ -4,7 +4,8 @@ import qs.Ui
 
 // The shell's small action button with a pixel icon laid over it, so the
 // icon can turn (a gear in eighths, its teeth landing where they were) or be
-// nudged in whole steps.
+// nudged in whole steps. The icon plays when the pointer arrives and on a
+// click.
 PanelActionButton {
   id: button
 
@@ -15,8 +16,11 @@ PanelActionButton {
   property int nudge: 0
 
   iconText: ""
+  onHovered: function(isHovered) { if (isHovered) pixel.play(0) }
+  onClicked: pixel.play(0)
 
   PixelIcon {
+    id: pixel
     anchors.centerIn: parent
     name: button.icon
     size: button.fontSize

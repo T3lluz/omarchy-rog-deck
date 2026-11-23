@@ -6,7 +6,7 @@ import "Rooms.js" as Rooms
 // A room, after DailyDash's tiles: its tone washed over the panel, joined to
 // the next by a small gap. When the panel opens the rooms rise into place one
 // after another and each icon acts itself out. Pointing at a room presses the
-// cells of its meters. A click ripples out from the pointer through them,
+// cells of its meters and plays its icon. A click ripples out from the pointer through them,
 // plays the icon again and says `clicked`, which opens the room.
 Rectangle {
   id: room
@@ -16,7 +16,8 @@ Rectangle {
   property var cells: []
   // How long after the panel opens this room comes in, in ms.
   property int delay: 0
-  // Goes up each time the icon should act itself out.
+  // Goes up each time the icon should act itself out: as the room comes
+  // in, on a click, and when the pointer arrives.
   property int story: 0
   property bool expanded: false
   // The keyboard's cursor is on it: an outline as well as the tint, so it
@@ -52,6 +53,8 @@ Rectangle {
   transform: Translate { y: room.rise }
 
   Behavior on color { ColorAnimation { duration: Style.duration(140) } }
+
+  onHoveredChanged: if (hovered) story++
 
   function enter() {
     riseIn.stop()

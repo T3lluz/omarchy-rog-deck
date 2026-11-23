@@ -1,7 +1,6 @@
 import QtQuick
 import qs.Commons
 import "../Model.js" as Model
-import "Rooms.js" as Rooms
 
 // The battery, a tile stacked beside the CPU and GPU: Batteries has the
 // full story, so this keeps to the level and its mark (a bolt while
@@ -35,7 +34,11 @@ Room {
     suffix: "%"
     delay: room.delay + 80
     mark: room.info.mark
-    story: Rooms.storyOf("battery")
     tick: room.story
+    // Plugging in or out plays it; while it charges, the bars fill now and
+    // then.
+    cue: room.info.mark
+    loop: room.info.mark === "zap" ? "burst" : ""
+    loopEvery: 4800
   }
 }

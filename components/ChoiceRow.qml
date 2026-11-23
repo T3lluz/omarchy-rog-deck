@@ -49,6 +49,10 @@ Row {
       required property int index
       readonly property bool current: choices.value === String(modelData.value)
       readonly property bool hot: area.containsMouse
+      // Its icon acts out the pick when it becomes the one in use, and when
+      // the pointer arrives.
+      onCurrentChanged: if (current && choices.host.opened) cellIcon.play(0)
+      onHotChanged: if (hot) cellIcon.play(0)
       readonly property real naturalHeight: content.implicitHeight + Style.space(choices.compact ? 5 : 7) * 2
 
       width: choices.cellWidth

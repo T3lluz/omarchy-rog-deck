@@ -1,7 +1,6 @@
 import QtQuick
 import qs.Commons
 import "../Model.js" as Model
-import "Rooms.js" as Rooms
 
 // The laptop's screen: its refresh rate in the block face and how the rate
 // is chosen. Its drawer (DisplayDrawer) picks the rate and the panel's own
@@ -31,7 +30,8 @@ Room {
     suffix: "Hz"
     expanded: room.expanded
     delay: room.delay + 120
-    story: Rooms.storyOf("display")
     tick: room.story
+    // A new rate sweeps the screen.
+    cue: String(room.rate)
   }
 }

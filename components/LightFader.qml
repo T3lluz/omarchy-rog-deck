@@ -48,6 +48,13 @@ Item {
       x: Math.round((parent.width - width) / 2)
       y: Math.round((parent.height - height) / 2)
       name: fader.on ? "sun" : "power-off"
+      // Switching the light plays the new state's icon, and it plays with
+      // its room as the panel opens.
+      onNameChanged: if (fader.host.opened) play(0)
+      Connections {
+        target: fader.host
+        function onEntryChanged() { icon.play(fader.delay + 420) }
+      }
       size: Style.font.heading
       color: fader.on ? fader.tone : fader.host.dim
     }

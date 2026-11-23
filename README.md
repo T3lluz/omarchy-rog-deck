@@ -4,7 +4,7 @@
   <p>An Omarchy bar widget and control panel for <b>ASUS ROG</b> laptops, built on <a href="https://asus-linux.org/">asusctl/asusd</a>:<br/>
   power modes, temperatures and fans, keyboard lighting with auto-off, AniMe Matrix, FN-lock, battery limit and Battery saver, a CPU power limit for Silent, full speed when plugged in, display and GPU mode.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v1.0.3-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v1.1.0-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-ff8f6b" />
     <img alt="asusd 6" src="https://img.shields.io/badge/asusd-6-ff8f6b" />
     <a href="https://github.com/T3lluz/omarchy-rog-deck/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-rog-deck/actions/workflows/ci.yml/badge.svg" /></a>
@@ -99,7 +99,7 @@ o.bind("XF86Launch4", "Next power mode", "omarchy-shell io.github.t3lluz.rog-dec
 - `Service.qml` holds the state, the settings file and the background jobs, and owns the IPC target.
 - `Panel.qml` and `components/` draw the bar icon, the hover card and the panel: a file per room, the Rooms pieces shared with Batteries and Sonus, and the panel kit shared by all four plugins in this family.
 - `Model.js` holds the pure logic and `components/Rooms.js` the look's (tones, the block face, the pixel type, meters, motion), both tested under node.
-- The icons are [Pixelarticons](https://pixelarticons.com) (MIT), plus a fan and the AniMe Matrix drawn on the same grid, built into `components/Pixels.js` by `scripts/fetch-pixel-icons.py`.
+- The icons are [Pixelarticons](https://pixelarticons.com) (MIT), plus a fan and the AniMe Matrix drawn on the same grid, built into `components/Pixels.js` by `scripts/fetch-pixel-icons.py`, which also splits each into the parts that move. `components/Motion.js` says how each one moves: the needle swings to the new mode, the fan's blades turn, the mercury climbs, the keys light up in a sweep.
 - The text is in [Monocraft](https://github.com/IdreesInc/Monocraft) 4.2.1, bundled in `assets/fonts/` with its license (SIL OFL 1.1) and loaded by `Panel.qml`, so nothing needs installing.
 
 Details that matter:

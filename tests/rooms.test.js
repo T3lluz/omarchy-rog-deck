@@ -13,7 +13,9 @@ function load(file, names) {
 
 const Rooms = load("components/Rooms.js", ["hasLevel", "UI_PIXELS", "GLYPH_PIXELS", "PIXEL_GLYPHS", "pixelFor", "parsePalette",
   "contrast", "TONE_HUES", "hexRgb", "roomToneHex", "bigDigits", "PIXEL_FONT", "pixelText", "drawable", "METER", "meterCells",
-  "faderValue", "revealLine", "STORIES", "storyOf", "storyPose", "spinFrame", "spinInterval", "scramble"])
+  "faderValue", "revealLine", "scramble"])
+const Motion = load("components/Motion.js", ["LOOP_MS", "REST", "STORIES", "hasStory", "duration", "poseAt", "loopAt",
+  "SPIN_STEPS", "spinInterval"])
 const Model = load("Model.js", ["MODEL_PIXELS", "PROFILES", "GPU_MODES", "FAN_PRESETS", "ANIME_CONTENT", "ROOM_TONES",
   "barParts", "hoverRows", "batteryPixel"])
 const { icons } = load("components/Pixels.js", ["icons"])
@@ -54,8 +56,10 @@ const chip = icons.cpu.g12
 assert.ok(chip.some(r => r[1] === 0) && chip.some(r => r[0] === 0) && chip.some(r => r[1] + r[3] === 12) && chip.some(r => r[0] + r[2] === 12),
   "the CPU has pins reaching every side")
 assert.ok(cellsOf(icons.cpu) <= 48, "and room between them, or at twelve pixels it reads as a sun")
-// The fan's two frames are the same weight, so flipping them reads as a turn.
-assert.ok(Math.abs(cellsOf(icons.fan) - cellsOf(icons["fan-2"])) <= 4, "the fan's frames match in weight")
+// The fan's two blade frames are the same weight, so flipping them reads as
+// a turn.
+const blades = icons.fan.parts.find(p => p.name === "blades").frames.map(f => f.g12.reduce((n, r) => n + r[2] * r[3], 0))
+assert.ok(Math.abs(blades[0] - blades[1]) <= 4, "the fan's frames match in weight")
 
 // Every Nerd Font glyph handed to the panel kit has a pixel icon, so no
 // typed glyph stands among the pixel art. The one the kit types itself, the
@@ -150,22 +154,71 @@ assert.strictEqual(Rooms.faderValue(150, 300, 15, 35, 1), 25)
 
 // ---- motion
 
-for (const story of new Set(Object.values(Rooms.STORIES).concat(["tilt", "buzz", "pop"]))) {
-  assert.deepStrictEqual(Rooms.storyPose(story, 0), { x: 0, y: 0 }, story + " starts at rest")
-  assert.deepStrictEqual(Rooms.storyPose(story, 1), { x: 0, y: 0 }, story + " ends where it began")
-  for (let k = 0; k < 1; k += 0.05) {
-    const p = Rooms.storyPose(story, k)
-    assert.ok(Number.isInteger(p.x) && Number.isInteger(p.y), story + " moves in whole pixels")
+// An icon's cells as a set of "x,y" on one grid.
+function cellSet(rects) {
+  const out = new Set()
+  for (const [x, y, w, h] of rects) for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) out.add((x + i) + "," + (y + j))
+  return out
+}
+for (const [name, art] of Object.entries(icons)) {
+  // Every icon acts itself out.
+  assert.ok(Motion.hasStory(name), name + " has a story in Motion.js")
+  if (!art.parts) continue
+  // At rest an icon split into parts draws exactly its art: its base and
+  // each part's resting frame, on both grids, nothing drawn twice.
+  for (const grid of ["g24", "g12"]) {
+    const whole = cellSet(art[grid])
+    const drawn = cellSet(art.base[grid])
+    let count = drawn.size
+    for (const part of art.parts) {
+      assert.ok(part.rest >= 0 && part.rest < part.frames.length, name + " " + part.name + " rests on a frame it has")
+      for (const c of cellSet(part.frames[part.rest][grid])) { drawn.add(c); count++ }
+    }
+    assert.strictEqual(count, drawn.size, name + " " + grid + ": no cell is drawn twice at rest")
+    assert.deepStrictEqual([...drawn].sort(), [...whole].sort(), name + " " + grid + ": base and resting parts are the icon")
   }
 }
-assert.strictEqual(Rooms.spinFrame(0), 0)
-assert.strictEqual(Rooms.spinFrame(1), 0)
-assert.strictEqual(Rooms.spinFrame(0.999), 0, "the spin ends on the frame it began on")
-assert.ok([0.1, 0.2, 0.3, 0.4, 0.5].some(k => Rooms.spinFrame(k) === 1), "the spin turns")
-assert.strictEqual(Rooms.spinInterval(0), 0, "still fans hold still")
-assert.strictEqual(Rooms.spinInterval(null), 0)
-assert.ok(Rooms.spinInterval(6000) < Rooms.spinInterval(2000), "faster fans turn faster")
-assert.ok(Rooms.spinInterval(20000) >= 140)
+for (const name of Object.keys(Motion.STORIES)) {
+  const art = icons[name]
+  assert.ok(art, name + "'s story is for an icon in Pixels.js")
+  const parts = new Map((art.parts || []).map(p => [p.name, p]))
+  assert.deepStrictEqual(Motion.poseAt(name, 0), Motion.REST, name + " starts at rest")
+  assert.deepStrictEqual(Motion.poseAt(name, 1), Motion.REST, name + " ends at rest")
+  let moved = false
+  for (let k = 0.01; k < 1; k += 0.01) {
+    const p = Motion.poseAt(name, k)
+    assert.ok(Number.isInteger(p.x) && Number.isInteger(p.y), name + " moves in whole cells")
+    assert.ok(p.turn % 45 === 0, name + " turns only in eighths")
+    if (p.x || p.y || p.turn || p.hide) moved = true
+    for (const [partName, q] of Object.entries(p.parts)) {
+      const part = parts.get(partName)
+      assert.ok(part, name + " moves a part it has: " + partName)
+      if (q.x !== undefined) assert.ok(Number.isInteger(q.x), name + " " + partName + " moves in whole cells")
+      if (q.y !== undefined) assert.ok(Number.isInteger(q.y), name + " " + partName + " moves in whole cells")
+      if (q.f !== undefined) assert.ok(Number.isInteger(q.f) && q.f >= 0 && q.f < part.frames.length, name + " " + partName + " shows a frame it has")
+      if (q.x || q.y || q.hide || (q.f !== undefined && q.f !== part.rest)) moved = true
+    }
+  }
+  assert.ok(moved, name + "'s story moves something")
+  // Back at rest well before the end, so the last frame is never cut off.
+  const late = Motion.poseAt(name, 0.99)
+  assert.strictEqual(late.x || late.y || late.hide ? 1 : 0, 0, name + " is still by the end")
+  for (const [partName, q] of Object.entries(late.parts)) {
+    assert.ok(!q.x && !q.y && !q.hide && (q.f === undefined || q.f === parts.get(partName).rest), name + " " + partName + " is home by the end")
+  }
+  assert.ok(late.turn % 90 === 0, name + " ends on a quarter turn, which looks as it began")
+}
+// Loops run off the one shared clock: every period divides it.
+for (const step of Motion.SPIN_STEPS) assert.strictEqual(Motion.LOOP_MS % (2 * step), 0, "a spin of " + step + " ms comes round with the clock")
+for (const every of [2400, 4800]) assert.strictEqual(Motion.LOOP_MS % every, 0)
+assert.deepStrictEqual(Motion.loopAt("fan", "spin", 200, 0), Motion.loopAt("fan", "spin", 200, Motion.LOOP_MS), "the spin wraps cleanly")
+assert.deepStrictEqual(Motion.loopAt("thermometer", "burst", 2400, 0), Motion.REST, "a burst starts at rest")
+assert.deepStrictEqual(Motion.loopAt("thermometer", "burst", 2400, 2000), Motion.REST, "and rests between bursts")
+assert.notDeepStrictEqual(Motion.loopAt("thermometer", "burst", 2400, 300), Motion.REST, "and moves in them")
+assert.strictEqual(Motion.spinInterval(0), 0, "still fans hold still")
+assert.strictEqual(Motion.spinInterval(null), 0)
+assert.ok(Motion.spinInterval(6000) < Motion.spinInterval(2000), "faster fans turn faster")
+assert.ok(Motion.SPIN_STEPS.includes(Motion.spinInterval(4300)))
 
 const noise = Rooms.scramble("CPU · 4.1k rpm", 0.3, 2)
 assert.strictEqual(noise.length, "CPU · 4.1k rpm".length)

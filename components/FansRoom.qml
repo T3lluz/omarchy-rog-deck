@@ -1,7 +1,7 @@
 import QtQuick
 import qs.Commons
 import "../Model.js" as Model
-import "Rooms.js" as Rooms
+import "Motion.js" as Motion
 
 // The fans, a tile stacked beside the CPU and GPU: the fan icon turning
 // while they spin (faster for faster fans, still when they stop) and the
@@ -32,13 +32,15 @@ Room {
     host: room.host
     height: Math.max(implicitHeight, room.height - room.pad * 2)
     icon: "fan"
-    frames: ["fan", "fan-2"]
-    spinEvery: Rooms.spinInterval(room.fastest)
+    // The blades turn while the fans do, faster for faster fans.
+    loop: "spin"
+    loopEvery: Motion.spinInterval(room.fastest)
     value: room.fastest
     format: function(v) { return Model.fanFigure(Math.round(v)) }
     delay: room.delay + 80
     tone: room.tone
-    story: Rooms.storyOf("fans")
     tick: room.story
+    // A new curve, or the custom one switching on or off, spins it up.
+    cue: room.host.activeProfile + "/" + room.custom
   }
 }

@@ -1,7 +1,6 @@
 import QtQuick
 import qs.Commons
 import "../Model.js" as Model
-import "Rooms.js" as Rooms
 
 // The AniMe Matrix on the lid: a button that turns it off and on, then its
 // brightness as three cells, each one click. Its drawer (AnimeDrawer) picks
@@ -34,8 +33,9 @@ Room {
     dimmed: !room.enabled
     expanded: room.expanded
     delay: room.delay + 120
-    story: Rooms.storyOf("anime")
     tick: room.story
+    // The lights come on again when they change.
+    cue: room.enabled + "/" + room.brightness
   }
 
   LightFader {

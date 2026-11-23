@@ -67,8 +67,9 @@ Room {
           mark: part.modelData.hot ? "thermometer" : ""
           expanded: room.expanded
           delay: room.delay + 120 + part.index * 60
-          story: Rooms.storyOf("heat")
           tick: room.story
+          // Crossing from cool to warm to hot plays the part again.
+          cue: part.modelData.warmth
         }
 
         Meter {

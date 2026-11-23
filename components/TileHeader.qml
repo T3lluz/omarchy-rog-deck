@@ -1,6 +1,5 @@
 import QtQuick
 import qs.Commons
-import "Rooms.js" as Rooms
 
 // A small room's content, for the two tiles stacked beside the CPU and GPU:
 // its icon and its figure side by side, centred in the tile as one group, no
@@ -12,9 +11,10 @@ Item {
 
   required property var host
   property string icon: ""
-  // An icon drawn in frames (the fan's two), flipped through to move it.
-  property var frames: []
-  property int spinEvery: 0
+  // A live state that keeps the icon moving (PixelIcon's `loop`), only while
+  // the panel is open.
+  property string loop: ""
+  property int loopEvery: 0
   property color tone: host.fg
   property var value: null
   // Turns the number as drawn into digits and a unit, for a figure that is
@@ -25,14 +25,11 @@ Item {
   property string suffix: "%"
   property string mark: ""
   property bool dimmed: false
-  property string story: "pop"
+  // Plays the icon each time it goes up, and when the state it stands for
+  // changes while the panel is open (RoomHeader's `tick` and `cue`).
   property int tick: 0
-  property real k: 1
-  property int spinPhase: 0
+  property string cue: ""
   readonly property real figureSize: Style.font.caption - 2
-  readonly property var pose: Rooms.storyPose(story, k)
-  readonly property string shownIcon: frames.length > 1
-    ? frames[(spinPhase + (story === "spin" ? Rooms.spinFrame(k) : 0)) % frames.length] : icon
   readonly property real gap: Style.space(7)
   // The group at its widest figure (100%), so the stack's width holds still
   // as the number changes.
@@ -41,23 +38,8 @@ Item {
   width: parent ? parent.width : 0
   implicitHeight: Math.max(iconBox.height, figure.implicitHeight)
 
-  onTickChanged: if (!Style.reduceMotion) storyRun.restart()
-
-  NumberAnimation {
-    id: storyRun
-    target: head
-    property: "k"
-    from: 0
-    to: 1
-    duration: Style.duration(head.story === "spin" ? 900 : 660)
-  }
-
-  Timer {
-    interval: Math.max(100, head.spinEvery)
-    repeat: true
-    running: head.spinEvery > 0 && head.host.opened && head.visible && !Style.reduceMotion && !storyRun.running
-    onTriggered: head.spinPhase = (head.spinPhase + 1) % 2
-  }
+  onTickChanged: iconBox.play(0)
+  onCueChanged: if (head.host.opened) iconBox.play(0)
 
   Counter {
     id: count
@@ -70,14 +52,14 @@ Item {
     anchors.centerIn: parent
     spacing: head.gap
 
-    // Moves in whole pixels of its own grid, so it never smears.
     PixelIcon {
       id: iconBox
       anchors.verticalCenter: parent.verticalCenter
-      name: head.shownIcon
+      name: head.icon
       size: Style.font.heading
       color: head.dimmed ? head.host.dim : head.tone
-      transform: Translate { x: head.pose.x * iconBox.cell; y: head.pose.y * iconBox.cell }
+      loop: head.host.opened ? head.loop : ""
+      loopEvery: head.loopEvery
     }
 
     BigFigure {

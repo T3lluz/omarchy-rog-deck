@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Window
+import QtQuick.Controls as Controls
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -33,23 +34,28 @@ Panel {
   readonly property string gpuAsk: service ? service.gpuAsk : ""
 
   readonly property color fg: bar ? bar.foreground : Commons.Color.foreground
-  readonly property color dim: Qt.darker(fg, 1.5)
+  // Quieter text is the text colour tinted toward the background, which
+  // reads on a light theme too: Qt.darker went near black on dark themes
+  // and vanished into a light one.
+  readonly property color bg: Commons.Color.background
+  function quiet(c, amount) { return Qt.tint(c, Qt.rgba(bg.r, bg.g, bg.b, amount === undefined ? 0.4 : amount)) }
+  readonly property color dim: quiet(fg)
   readonly property color accent: Commons.Color.accent
   readonly property color urgent: bar ? bar.urgent : Commons.Color.urgent
   // Every word ROG Deck draws is in Monocraft, a pixel font that matches the
-  // pixel icons and figures. It ships in assets/fonts, so it needs no system
-  // install. The bold face is loaded too, so bold text uses Monocraft's own
-  // bold instead of a smeared synthetic one. Until it loads, or if it can't,
-  // text falls back to the bar's font.
+  // pixel icons and figures, as "Monocraft ROG Deck": scripts/patch-font.py
+  // builds this plugin's copy under a name of its own, since the four
+  // plugins' copies all load into one shell and Qt drew whichever registered
+  // first. It ships in assets/fonts, so it needs no system install. Only the
+  // regular face: Monocraft's bold is off the pixel grid, so MonoText never
+  // draws it. Until it loads, or if it can't, text falls back to the bar's
+  // font.
   FontLoader { id: monocraft; source: Qt.resolvedUrl("assets/fonts/Monocraft.ttf") }
-  FontLoader { id: monocraftBold; source: Qt.resolvedUrl("assets/fonts/Monocraft-Bold.ttf") }
   readonly property string fontFamily: monocraft.status === FontLoader.Ready ? monocraft.name
     : bar ? bar.fontFamily : Style.font.family
-  // The block-face figures (BigFigure) take their cell size from a font's
-  // digits and line height. They keep the bar's font for that, so the
-  // figures stay the size they were drawn for; Monocraft's wider, shorter
-  // cells squashed them.
-  readonly property string gridFamily: bar ? bar.fontFamily : Style.font.family
+  // The block-face figures (BigFigure) lay their cells on a font's digits
+  // and line, the same Monocraft.
+  readonly property string gridFamily: fontFamily
   readonly property bool vertical: bar ? bar.vertical : false
 
   // Rooms are padded 10 and joined by 3, as in Batteries and Sonus; their
@@ -62,6 +68,29 @@ Panel {
   readonly property real roomPad: Style.space(10)
   readonly property real iconColumn: Math.round(Style.font.heading * 1.25)
   readonly property real textInset: iconColumn + Style.space(10)
+
+  // ---- wheel -------------------------------------------------------------------
+
+  // Scrolling on the bar item walks the modes a notch at a time
+  // (Model.wheelSteps): a touchpad swipe sends dozens of small events, and
+  // stepping on each ran Silent to Turbo in one swipe, a backend run and an
+  // OSD for every one. A part notch left over is dropped after a pause, so
+  // it never adds to the next swipe.
+  property real wheelAcc: 0
+
+  function wheelProfile(delta) {
+    if (!service) return
+    var r = Model.wheelSteps(wheelAcc, delta)
+    wheelAcc = r.acc
+    wheelRest.restart()
+    for (var i = 0; i < Math.abs(r.steps); i++) service.stepProfile(r.steps)
+  }
+
+  Timer {
+    id: wheelRest
+    interval: 500
+    onTriggered: root.wheelAcc = 0
+  }
 
   // ---- settings ---------------------------------------------------------------
 
@@ -281,6 +310,23 @@ Panel {
     if (service) service.askGpuMode(mode)
   }
 
+  // A fan preset or Reset from the fans room or the curve page. Reset, and a
+  // preset over a custom curve that is on, ask first (Model.fanConfirm): one
+  // click used to throw a hand-tuned curve away.
+  property var fanAsk: null
+
+  function pickFans(mode, action, custom) {
+    if (!service) return
+    var ask = Model.fanConfirm(mode, action, custom)
+    if (ask) fanAsk = { mode: mode, action: action, message: ask.message, confirmText: ask.confirmText }
+    else applyFans(mode, action)
+  }
+
+  function applyFans(mode, action) {
+    if (action === "reset") service.resetFans(mode)
+    else service.setFanPreset(mode, action)
+  }
+
   // ---- keyboard ----------------------------------------------------------------
 
   // Left and right walk the power modes (the first press lights the cursor),
@@ -366,7 +412,9 @@ Panel {
   // icon size, with pixel art's two units clear around the 24): twelve device
   // pixels on a 1.25 scale, twenty-four on a 2. The figures stand as tall as
   // the bar's digits.
-  readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+  // The window's scale, not Screen's: on a 1.25 monitor Screen.devicePixelRatio
+  // says 2, and everything snapped for 2x there.
+  readonly property real dpr: Window.window && Window.window.devicePixelRatio > 0 ? Window.window.devicePixelRatio : 1
   readonly property int iconUnit: Math.max(1, Math.floor(Style.bar.iconSize * 24 / 20 * dpr / 12))
   readonly property int pixelUnit: Math.max(1, Math.round(button.fontSize * 0.72 * dpr / 5))
   readonly property color barFg: bar ? bar.barForeground : Commons.Color.foreground
@@ -395,7 +443,7 @@ Panel {
         }
       } else root.toggle()
     }
-    onWheelMoved: function(delta) { if (root.service) root.service.stepProfile(delta) }
+    onWheelMoved: function(delta) { root.wheelProfile(delta) }
 
     Row {
       id: content
@@ -446,13 +494,13 @@ Panel {
           }
 
           MonoText {
+            fontFamily: root.fontFamily
+            step: "small"
             visible: parent.modelData.word !== ""
             anchors.verticalCenter: parent.verticalCenter
             textFormat: Text.PlainText
             text: parent.modelData.word
             color: parent.ink
-            font.family: root.fontFamily
-            font.pixelSize: button.fontSize
             renderType: Text.NativeRendering
           }
         }
@@ -496,6 +544,7 @@ Panel {
     shown: root.cardShown
     rows: root.hoverRows
     note: root.hoverNote
+    hint: Model.HOVER_HINT
     palette: root.palette
     unit: root.pixelUnit
     fontFamily: root.fontFamily
@@ -514,7 +563,14 @@ Panel {
     // last row is never clipped.
     readonly property real flickMargin: Style.space(4)
     contentWidth: panel.fittedContentWidth(root.panelWidth + flickMargin * 2)
-    contentHeight: panel.fittedContentHeight(pages.implicitHeight + flickMargin * 2)
+    contentHeight: panel.fittedContentHeight(wanted)
+    // What the page needs, before the screen's limit (the settings page is
+    // taller than the laptop's screen at 2x).
+    readonly property real wanted: pages.implicitHeight + flickMargin * 2
+    // Decided from that limit rather than from the Flickable's height, which
+    // grows a frame behind its content while a room opens: compared with the
+    // height, the bar flashed in and out (Server Dashboard's finding).
+    readonly property bool overflowing: contentHeight < wanted + verticalContentInset - 1
 
     Flickable {
       id: flick
@@ -524,6 +580,34 @@ Panel {
       clip: true
       flickableDirection: Flickable.VerticalFlick
       boundsBehavior: Flickable.StopAtBounds
+      interactive: panel.overflowing
+      // A room closing, or a shorter page, can leave the view past the end.
+      onContentHeightChanged: {
+        var end = Math.max(0, contentHeight - height)
+        if (contentY > end) contentY = end
+      }
+      onHeightChanged: {
+        var end = Math.max(0, contentHeight - height)
+        if (contentY > end) contentY = end
+      }
+      // Shown whenever there is more, since the clip can fall between two
+      // rooms and make the page look finished. Thin, over the rooms' right
+      // padding, so it never narrows them.
+      Controls.ScrollBar.vertical: Controls.ScrollBar {
+        id: flickScroll
+        policy: panel.overflowing ? Controls.ScrollBar.AlwaysOn : Controls.ScrollBar.AlwaysOff
+        padding: 0
+        rightPadding: Style.space(2)
+        topPadding: Style.space(2)
+        bottomPadding: Style.space(2)
+        background: Item {}
+        contentItem: Rectangle {
+          implicitWidth: Math.max(2, Style.space(3))
+          radius: Style.cornerRadius > 0 ? width / 2 : 0
+          color: root.fg
+          opacity: flickScroll.pressed ? 0.6 : flickScroll.hovered ? 0.45 : 0.3
+        }
+      }
 
       Item {
         id: pages
@@ -580,12 +664,33 @@ Panel {
       }
     }
 
+    ConfirmDialog {
+      id: fanConfirm
+      anchors.fill: parent
+      z: 10
+      opened: root.fanAsk !== null
+      message: root.fanAsk ? root.fanAsk.message : ""
+      confirmText: root.fanAsk ? root.fanAsk.confirmText : ""
+      foreground: root.fg
+      fontFamily: root.fontFamily
+      // Start on Cancel, as the GPU switch does.
+      onOpenedChanged: if (opened) selectedIndex = 0
+      onCanceled: root.fanAsk = null
+      onConfirmed: {
+        var ask = root.fanAsk
+        root.fanAsk = null
+        if (ask) root.applyFans(ask.mode, ask.action)
+      }
+    }
+
     PanelKeyCatcher {
       id: keyCatcher
+      // The dialog that is open, if any, takes the keys.
+      readonly property var dialog: gpuConfirm.opened ? gpuConfirm : fanConfirm.opened ? fanConfirm : null
       anchors.fill: parent
       onMoveRequested: function(dx, dy) {
-        if (gpuConfirm.opened) {
-          if (dx !== 0) gpuConfirm.selectedIndex = gpuConfirm.selectedIndex === 0 ? 1 : 0
+        if (keyCatcher.dialog) {
+          if (dx !== 0) keyCatcher.dialog.selectedIndex = keyCatcher.dialog.selectedIndex === 0 ? 1 : 0
           return
         }
         if (dx !== 0 && root.view === "rooms") {
@@ -596,16 +701,16 @@ Panel {
         }
       }
       onActivateRequested: {
-        if (gpuConfirm.opened) {
-          if (gpuConfirm.selectedIndex === 0) gpuConfirm.canceled()
-          else gpuConfirm.confirmed()
+        if (keyCatcher.dialog) {
+          if (keyCatcher.dialog.selectedIndex === 0) keyCatcher.dialog.canceled()
+          else keyCatcher.dialog.confirmed()
           return
         }
         if (root.view === "rooms" && root.cursorActive && root.profiles.length > 0 && root.service)
           root.service.setProfile(root.profiles[root.profileCursor].key)
       }
       onCloseRequested: {
-        if (gpuConfirm.opened) gpuConfirm.canceled()
+        if (keyCatcher.dialog) keyCatcher.dialog.canceled()
         else if (root.openRoom !== "") root.openRoom = ""
         else if (root.view !== "rooms") root.setView("rooms")
         else root.close()
@@ -613,7 +718,8 @@ Panel {
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(t) {
         var key = t.toLowerCase()
-        if (key === "s" || key === ",") root.setView(root.view === "settings" ? "rooms" : "settings")
+        // `,` is the settings key in all four plugins; `s` and `c` too.
+        if (key === "," || key === "s" || key === "c") root.setView(root.view === "settings" ? "rooms" : "settings")
       }
     }
   }

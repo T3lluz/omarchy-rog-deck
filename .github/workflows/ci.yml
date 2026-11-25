@@ -26,4 +26,15 @@ jobs:
           node tests/update.test.js
           python3 -B -m unittest discover tests
       - name: Backend compiles
-        run: python3 -B -c "import ast, sys; ast.parse(open('bin/rog-deck').read())"
+        run: |
+          python3 -B -c "import ast; ast.parse(open('bin/rog-deck').read())"
+          python3 -B -c "import ast; ast.parse(open('bin/rog-deck-power').read())"
+      - name: README badge matches the manifest
+        run: |
+          python3 - <<'PY'
+          import json, re
+          version = json.load(open("manifest.json"))["version"]
+          badge = re.search(r"badge/v([0-9][^-]*)-", open("README.md").read())
+          assert badge, "README has no version badge"
+          assert badge.group(1) == version, "README badge says %s, manifest.json %s" % (badge.group(1), version)
+          PY

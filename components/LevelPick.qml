@@ -34,6 +34,8 @@ Column {
     height: Math.max(labelText.implicitHeight, valueText.implicitHeight)
 
     MonoText {
+      fontFamily: pick.host.fontFamily
+      step: "body"
       id: labelText
       anchors.left: parent.left
       anchors.right: valueText.left
@@ -42,19 +44,16 @@ Column {
       textFormat: Text.PlainText
       text: pick.label
       color: pick.host.fg
-      font.family: pick.host.fontFamily
-      font.pixelSize: Style.font.bodySmall
     }
 
     MonoText {
+      fontFamily: pick.host.fontFamily
+      step: "body"
       id: valueText
       anchors.right: parent.right
       textFormat: Text.PlainText
       text: typeof pick.format === "function" ? pick.format(pick.shown) : Math.round(pick.shown) + pick.unit
       color: pick.host.fg
-      font.family: pick.host.fontFamily
-      font.pixelSize: Style.font.bodySmall
-      font.bold: true
     }
   }
 

@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import "Rooms.js" as Rooms
 
 // A room's number in the block face (Rooms.bigDigits), with its unit small
@@ -16,6 +17,11 @@ Item {
   // The digits to draw in place of the rounded value, for a figure with a
   // decimal point (a fan's 4.3).
   property string text: ""
+  // The reading it is counting toward (or its digits, as `text` is), so the
+  // figure holds its width while it counts: 0 up to 95 widened under the
+  // pointer, and the name beside it moved.
+  property var target: null
+  property string targetText: ""
   property string suffix: "%"
   property color tone: "white"
   property color foreground: "white"
@@ -29,10 +35,18 @@ Item {
   readonly property bool known: text !== "" || Rooms.hasLevel(value)
   readonly property var rows: Rooms.bigDigits(text !== "" ? text : known ? String(Math.round(value)) : "--")
   readonly property int cols: rows[0].length
+  readonly property int targetCols: targetText !== "" ? Rooms.bigDigits(targetText)[0].length
+    : Rooms.hasLevel(target) ? Rooms.bigDigits(String(Math.round(target)))[0].length : 0
+  // Columns kept for the digits; they sit at the right of them.
+  readonly property int keptCols: Math.max(cols, targetCols)
+  readonly property real shift: Math.round((keptCols - cols) * cellW)
   readonly property real cellW: grid.implicitWidth / 10
   readonly property real cellH: Math.round(metrics.height * 0.9)
-  readonly property real digitsWidth: Math.round(cols * cellW)
-  readonly property color faceColor: known && !dimmed ? tone : Qt.darker(foreground, 1.5)
+  readonly property real digitsWidth: Math.round(keptCols * cellW)
+  // Unknown, off or stale figures and the unit, tinted toward the panel
+  // so they read on a light theme too.
+  property color quiet: Qt.tint(foreground, Qt.rgba(Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, 0.4))
+  readonly property color faceColor: known && !dimmed ? tone : quiet
   // Every block of every row, as [col, row, "full" | "top" | "bottom"].
   readonly property var blocks: {
     var out = []
@@ -72,9 +86,9 @@ Item {
     Rectangle {
       required property var modelData
       readonly property real from: modelData[1] * figure.cellH + (modelData[2] === "bottom" ? figure.cellH / 2 : 0)
-      x: Math.round(modelData[0] * figure.cellW)
+      x: figure.shift + Math.round(modelData[0] * figure.cellW)
       y: Math.round(from)
-      width: Math.round((modelData[0] + 1) * figure.cellW) - x
+      width: figure.shift + Math.round((modelData[0] + 1) * figure.cellW) - x
       height: Math.round(from + (modelData[2] === "full" ? figure.cellH : figure.cellH / 2)) - y
       color: figure.faceColor
       antialiasing: false
@@ -105,7 +119,7 @@ Item {
       y: figure.unitTop ? parent.height - height : 0
       name: figure.mark
       size: figure.markSize
-      color: figure.dimmed ? Qt.darker(figure.foreground, 1.5) : figure.tone
+      color: figure.dimmed ? figure.quiet : figure.tone
     }
 
     PixelText {
@@ -115,7 +129,7 @@ Item {
       y: figure.unitTop ? 0 : parent.height - height
       text: figure.suffix
       size: Style.font.caption * 0.75
-      color: Qt.darker(figure.foreground, 1.5)
+      color: figure.quiet
     }
   }
 }

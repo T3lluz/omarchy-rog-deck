@@ -105,21 +105,25 @@ CUSTOM = {
         "..#.....#...",
         "............",
     ],
-    # A pinwheel of four teardrop blades round a hub. Its blades have a
-    # second frame (FAN_TURNED, an eighth of a turn on), so flipping between
-    # the two spins it without turning pixel art off the quarter turns.
+    # Four solid blades round a hub of their own, each blade clear of the hub
+    # and of its neighbours and leaning a little the way the fan turns. The
+    # pinwheel of outlined teardrops before it read as a knot at 2x and a
+    # blob at 1.25. Its blades have a second frame (FAN_TURNED, an eighth of
+    # a turn on), so flipping between the two spins it without turning pixel
+    # art off the quarter turns. No blade bends at a right angle: four
+    # hooked arms make a shape no one wants in their bar.
     "fan": [
         "....###.....",
-        "...#...#....",
-        "...#...#....",
-        "....#..#.##.",
-        ".#####.##..#",
-        "#....###...#",
-        "#...###....#",
-        "#..##.#####.",
-        ".##.#..#....",
-        "....#...#...",
-        "....#...#...",
+        "....####....",
+        ".....###....",
+        ".....##.....",
+        ".##.......##",
+        "####.##.####",
+        "####.##.####",
+        "##.......##.",
+        ".....##.....",
+        "....###.....",
+        "....####....",
         ".....###....",
     ],
     # The AniMe Matrix: the lid's grid of LEDs.
@@ -143,21 +147,22 @@ CUSTOM = {
 # icon whose strokes sit off the odd units. None at the moment.
 SMALL = {}
 
-# The fan an eighth of a turn on: its blades' second frame.
+# The fan an eighth of a turn on, its blades on the diagonals: their
+# second frame.
 FAN_TURNED = [
-        "........##..",
-        ".##....#..#.",
-        "#..#...#..#.",
-        "#...#..#.#..",
-        ".####..##...",
-        ".....##.....",
-        ".....##.....",
-        "...##..####.",
-        "..#.#..#...#",
-        ".#..#...#..#",
-        ".#..#....##.",
-        "..##........",
-    ]
+    "............",
+    "..##....##..",
+    ".####..####.",
+    ".####..####.",
+    "..##....##..",
+    ".....##.....",
+    ".....##.....",
+    "..##....##..",
+    ".####..####.",
+    ".####..####.",
+    "..##....##..",
+    "............",
+]
 
 
 # ---------------------------------------------------------------- moving parts

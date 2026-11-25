@@ -29,6 +29,19 @@ PANEL = {
 }
 
 
+class PickableRates(unittest.TestCase):
+    def test_drops_slow_rates_and_near_duplicates(self):
+        self.assertEqual(backend.pickable_rates([48, 50, 60, 59, 120, 119, 144, 165, 240]), [60, 120, 144, 165, 240])
+
+    def test_keeps_a_plain_panel_as_it_is(self):
+        self.assertEqual(backend.pickable_rates([60, 165]), [60, 165])
+
+    def test_display_status_lists_only_pickable_rates(self):
+        panel = dict(PANEL, availableModes=["2560x1600@48.00Hz", "2560x1600@59.94Hz", "2560x1600@60.00Hz", "2560x1600@165.00Hz"])
+        with mock.patch.object(backend, "panel_monitor", return_value=panel):
+            self.assertEqual(backend.display_status()["rates"], [60, 165])
+
+
 class MonitorOutput(unittest.TestCase):
     def test_uses_the_description_hyprmoncfg_writes_its_rule_for(self):
         self.assertEqual(backend.monitor_output(PANEL), "desc:Thermotrex Corporation TL140ADXP02-0")

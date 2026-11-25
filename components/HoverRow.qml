@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import "Rooms.js" as Rooms
 
 // One line of the bar's hover card: a room tinted in its colour, as in the
@@ -20,9 +21,15 @@ Rectangle {
   // the card one after another.
   property int delay: 0
   readonly property bool hasLevel: Rooms.hasLevel(hoverRow.entry.level)
-  readonly property color quiet: Qt.darker(foreground, 1.5)
+  // The card's own background, which quiet text is tinted toward.
+  property color background: Commons.Color.tooltip.background
+  readonly property color quiet: Qt.tint(foreground, Qt.rgba(background.r, background.g, background.b, 0.4))
 
   height: Math.max(name.implicitHeight, Style.space(14)) + Style.space(6) * 2
+  // The width that shows the name on one line beside the fixed columns:
+  // the card grows toward it (HoverCard).
+  readonly property real naturalWidth: icon.x + icon.width + Style.space(6) + name.implicitWidth + Style.space(6)
+    + markSlot.width + Style.space(5) + cells.width + Style.space(8) + level.width + Style.space(6)
   radius: Style.cornerRadius
   color: Qt.rgba(tone.r, tone.g, tone.b, 0.08)
 
@@ -38,6 +45,8 @@ Rectangle {
   }
 
   MonoText {
+    fontFamily: hoverRow.fontFamily
+    step: "small"
     id: name
     anchors.left: icon.right
     anchors.leftMargin: Style.space(6)
@@ -48,8 +57,6 @@ Rectangle {
     wrapMode: Text.Wrap
     text: hoverRow.entry.name || ""
     color: hoverRow.entry.dimmed ? hoverRow.quiet : hoverRow.foreground
-    font.family: hoverRow.fontFamily
-    font.pixelSize: Style.font.bodySmall
   }
 
   // The mark (charging, plugged in, hot) in a column of its own that is there
@@ -67,7 +74,7 @@ Rectangle {
       visible: !!hoverRow.entry.mark
       name: hoverRow.entry.mark || "zap"
       playOnShow: true
-      showDelay: hoverRow.delay + 120
+      showDelay: hoverRow.delay
       size: Style.font.body
       color: hoverRow.tone
     }

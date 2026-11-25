@@ -46,7 +46,9 @@ Rectangle {
   width: parent ? parent.width : 0
   implicitHeight: naturalHeight + pad * 2
   radius: Style.cornerRadius
-  color: Qt.rgba(tone.r, tone.g, tone.b, hovered || expanded || keyed ? 0.11 : 0.065)
+  // Only a room that opens answers the pointer: a tint on one that doesn't
+  // promises a click that does nothing.
+  color: Qt.rgba(tone.r, tone.g, tone.b, (hovered && clickable) || expanded || keyed ? 0.11 : 0.065)
   border.width: keyed ? Math.max(1, Style.space(1)) : 0
   border.color: Qt.rgba(tone.r, tone.g, tone.b, 0.6)
   opacity: fade
@@ -54,7 +56,7 @@ Rectangle {
 
   Behavior on color { ColorAnimation { duration: Style.duration(140) } }
 
-  onHoveredChanged: if (hovered) story++
+  onHoveredChanged: if (hovered && clickable) story++
 
   function enter() {
     riseIn.stop()

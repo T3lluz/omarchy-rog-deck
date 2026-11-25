@@ -136,12 +136,12 @@ Column {
       }
 
       MonoText {
+        fontFamily: tab.deck.fontFamily
+        step: "small"
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: "Point " + (pointEditor.index + 1) + "/" + curve.working.length
         color: tab.deck.fg
-        font.family: tab.deck.fontFamily
-        font.pixelSize: Style.font.bodySmall
       }
 
       PixelButton {
@@ -180,13 +180,12 @@ Column {
       }
 
       MonoText {
+        fontFamily: tab.deck.fontFamily
+        step: "small"
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: "°C"
-        color: tab.deck.fg
-        opacity: 0.6
-        font.family: tab.deck.fontFamily
-        font.pixelSize: Style.font.body
+        color: tab.deck.dim
       }
 
       PixelIcon {
@@ -211,13 +210,12 @@ Column {
       }
 
       MonoText {
+        fontFamily: tab.deck.fontFamily
+        step: "small"
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: "%"
-        color: tab.deck.fg
-        opacity: 0.6
-        font.family: tab.deck.fontFamily
-        font.pixelSize: Style.font.body
+        color: tab.deck.dim
       }
     }
   }
@@ -232,14 +230,13 @@ Column {
   }
 
   MonoText {
+    fontFamily: tab.deck.fontFamily
+    step: "small"
     width: parent.width
     visible: !tab.curveData
     textFormat: Text.PlainText
-    text: tab.curves ? "This laptop has no fan curves in asusd." : "Reading fan curves…"
-    color: tab.deck.fg
-    opacity: 0.6
-    font.family: tab.deck.fontFamily
-    font.pixelSize: Style.font.bodySmall
+    text: tab.curves ? "This laptop has no custom fan curves" : "Reading fan curves…"
+    color: tab.deck.dim
   }
 
   PanelSeparator { foreground: tab.deck.fg; visible: !!tab.curveData }
@@ -262,9 +259,6 @@ Column {
     options: Model.FAN_PRESETS.map(function(p) { return { value: p.value, label: p.label, pixel: p.pixel, hint: p.hint } })
       .concat([{ value: "reset", label: "Reset", pixel: "undo", hint: "The firmware's curve, custom off" }])
     value: ""
-    onPicked: function(v) {
-      if (v === "reset") tab.service.resetFans(tab.mode)
-      else tab.service.setFanPreset(tab.mode, v)
-    }
+    onPicked: function(v) { tab.deck.pickFans(tab.mode, v, tab.custom) }
   }
 }

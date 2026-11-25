@@ -11,9 +11,9 @@
 //
 // A story is a one-off: `pose(name, k)` gives the icon's pose `k` of the way
 // through (0..1), and every story starts and ends at rest. A loop (a fan
-// spinning, a hot thermometer, a charging battery) runs off one shared clock
-// of LOOP_MS, the wall clock folded, and every loop's period divides it, so
-// nothing jumps when the clock comes round.
+// spinning, a hot thermometer, a charging battery, a banner at work) runs
+// off one shared clock of LOOP_MS, the wall clock folded, and every loop's
+// period divides it, so nothing jumps when the clock comes round.
 
 var LOOP_MS = 4800
 
@@ -246,18 +246,50 @@ function poseAt(name, k) {
   return story.at(k)
 }
 
-// A loop's pose at `t` ms into the shared clock (0..LOOP_MS). "spin" flips
+// A loop's pose at `t` ms into the shared clock (0..LOOP_MS). "turn" turns
+// the whole icon a quarter every `every` ms; "spin" flips
 // the fan's blades every `every` ms; "burst" plays the icon's story at the
 // start of every `every` ms and rests for the rest of it.
 function loopAt(name, kind, every, t) {
   if (!(every > 0)) return REST
   if (kind === "spin") return pose({ blades: { f: Math.floor(t / every) % 2 } })
+  // A busy icon turning a quarter at a time, the one turn pixel art takes
+  // whole.
+  if (kind === "turn") return pose(null, { turn: 90 * (Math.floor(t / every) % 4) })
   if (kind === "burst") {
     var story = STORIES[name]
     if (!story) return REST
     return poseAt(name, (t % every) / story.ms)
   }
   return REST
+}
+
+// How long until the pose next changes, in ms, so the player can wake
+// exactly then instead of sampling: at a fixed 33 ms a 150 ms flip held
+// for 132 to 165. A story's steps are found by looking ahead in PROBE_MS
+// steps; a spin flips on its boundary; a burst between plays waits for the
+// next one.
+var PROBE_MS = 4
+
+function storyNext(name, k, ms) {
+  var story = STORIES[name]
+  if (!story || !(ms > 0)) return 0
+  var now = JSON.stringify(poseAt(name, k))
+  var left = (1 - k) * ms
+  for (var dt = PROBE_MS; dt < left; dt += PROBE_MS)
+    if (JSON.stringify(poseAt(name, k + dt / ms)) !== now) return dt
+  return Math.max(1, Math.ceil(left))
+}
+
+function loopNext(name, kind, every, t) {
+  if (!(every > 0)) return 0
+  var toBoundary = every - (t % every)
+  if (kind === "burst") {
+    var story = STORIES[name]
+    var into = t % every
+    if (story && into < story.ms) return Math.min(toBoundary, storyNext(name, into / story.ms, story.ms))
+  }
+  return toBoundary
 }
 
 // How often the fan flips its blades while the panel is open and the fans

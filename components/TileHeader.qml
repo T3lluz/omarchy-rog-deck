@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import "Rooms.js" as Rooms
 
 // A small room's content, for the two tiles stacked beside the CPU and GPU:
 // its icon and its figure side by side, centred in the tile as one group, no
@@ -68,6 +69,8 @@ Item {
       // Slides to a new reading rather than jumping to it.
       value: count.known ? count.shown : null
       text: head.formatted ? head.formatted.text : ""
+      target: head.value
+      targetText: typeof head.format === "function" && Rooms.hasLevel(head.value) ? head.format(head.value).text : ""
       suffix: head.formatted ? head.formatted.suffix : head.suffix
       tone: head.tone
       foreground: head.host.fg

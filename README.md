@@ -2,9 +2,9 @@
   <img src="assets/icon.svg" width="72" height="72" alt="ROG Deck" />
   <h1>ROG Deck</h1>
   <p>An Omarchy bar widget and control panel for <b>ASUS ROG</b> laptops, built on <a href="https://asus-linux.org/">asusctl/asusd</a>:<br/>
-  power modes, temperatures and fans, keyboard lighting with auto-off, AniMe Matrix, FN-lock, battery limit and Battery saver, a CPU power limit for Silent, full speed when plugged in, display and GPU mode.</p>
+  power modes, temperatures and fans, keyboard lighting with auto-off, AniMe Matrix, Fn lock, battery limit and Battery saver, a CPU power limit for Silent, full speed when plugged in, display and GPU mode.</p>
   <p>
-    <img alt="Version" src="https://img.shields.io/badge/v1.1.1-111111?label=version" />
+    <img alt="Version" src="https://img.shields.io/badge/v1.2.0-111111?label=version" />
     <img alt="Omarchy 4" src="https://img.shields.io/badge/Omarchy-4-ff8f6b" />
     <img alt="asusd 6" src="https://img.shields.io/badge/asusd-6-ff8f6b" />
     <a href="https://github.com/T3lluz/omarchy-rog-deck/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/T3lluz/omarchy-rog-deck/actions/workflows/ci.yml/badge.svg" /></a>
@@ -24,12 +24,12 @@ ROG Deck is one panel of rooms, the look Batteries and Sonus share: each part of
 - **Battery** (green, a small tile under the fans, since [Batteries](https://github.com/T3lluz/omarchy-batteries) has the full story): the level, a bolt while it charges and a plug while it holds. Hover it for what the charger is doing; open it for the power flowing in or out, to drag where charging stops (20 to 100%), charge to full once, and turn on Battery saver: on battery, 60 Hz, panel overdrive off, screen power saving and Wi-Fi power save, all put back when the charger returns.
 - **Display** (yellow): the refresh rate. Open it to pick Auto (the top rate on the charger, 60 Hz on battery) or a fixed rate, panel overdrive, and screen power saving (amdgpu's panel power savings at level 3 on battery; power-profiles-daemon's own version waits for 50% battery, so Battery saver switches it off and sets the level itself).
 - **Graphics** (green): the GPU mode and whether the NVIDIA GPU is awake, asleep or off, with its draw while awake. Open it to switch between Integrated (NVIDIA off), Hybrid and Dedicated (MUX). A switch only takes hold on restart, so it asks first.
-- **Keyboard** (cyan): a button that turns the light off and back on, then three cells for Low, Med and High, each one click anywhere in the cell. Open it for auto-off after a set time without typing or touchpad use (15 s to 10 min), staying on while plugged in, dimming instead, and FN-lock.
+- **Keyboard** (cyan): a button that turns the light off and back on, then three cells for Low, Med and High, each one click anywhere in the cell. Open it for auto-off after a set time without typing or touchpad use (15 s to 10 min), staying on while plugged in, dimming instead, and Fn lock.
 - **AniMe Matrix** (magenta): the same button and cells for its brightness. Open it to show the firmware's Banner or the ROG logo and to turn it off on battery, asleep or with the lid closed.
 
 **Settings** (the gear, or right-click the bar icon): what the bar shows, when the keyboard is lit (startup, awake, sleep, shutdown), RGB effects and colours, the AniMe Matrix's startup, sleep and shutdown animations, the boot sound, and the version and updates. A white-only keyboard stays on Static: asusd lists animated effects for those too, but they only pulse the white and can get stuck.
 
-- **The bar:** the mode's icon in pixels, the leaf, gauge and speedometer Omarchy's own power menu shows for Silent, Balanced and Turbo; scroll it to switch. Middle-click it for the keyboard light, hover it for a card with every reading. Readings you pick for the bar follow in the same pixel type: the mode name, CPU and GPU temperature (in the urgent colour from 85 °C), fan speed, package power, the NVIDIA GPU's state or draw, battery and refresh rate. Each room has the switches for its own readings; the settings page has them all.
+- **The bar:** the mode's icon in pixels, the leaf, gauge and speedometer Omarchy's own power menu shows for Silent, Balanced and Turbo; scroll it to switch, one mode per notch (a touchpad swipe moves one). Middle-click it for the keyboard light, hover it for a card with every reading. Readings you pick for the bar follow in the same pixel type: the mode name, CPU and GPU temperature (in the urgent colour from 85 °C), fan speed, package power, the NVIDIA GPU's state or draw, battery and refresh rate. Each room has the switches for its own readings; the settings page has them all.
 - **Motion:** opening the panel plays one short sequence: the rooms rise in, meters fill while their numbers count up, the lines under each name decode, each icon acts itself out, and the title's prompt types facts about the laptop. Then it holds still, apart from the fan while it runs. Clicks ripple through a room's cells. Omarchy's reduced motion setting stills all of it.
 - **Updates itself:** the settings page checks the plugin's GitHub every few hours and updates in place when you click Update. Local edits in the plugin folder, new files included, are kept in `git stash` rather than blocking the update, and dropped when they already are the new version.
 - **Banners** above the rooms for what needs you: an error, a GPU switch waiting on a restart, or a new version.
@@ -41,7 +41,7 @@ ROG Deck is one panel of rooms, the look Batteries and Sonus share: each part of
 
 - **Keyboard auto-off** uses the same Wayland idle signal as Omarchy's lock screen but ignores "keep awake" inhibitors (a video keeps the screen on, not the keyboard), and keeps its own level so unlocking never leaves the keyboard dark.
 - **Mode switching on plug/unplug is Omarchy's.** Omarchy and asusd both switch modes when the charger changes and race; on first run ROG Deck turns asusd's switching off.
-- **After login** it puts back FN-lock and the firmware AniMe animations, and moves the Auto refresh rate with the charger.
+- **After login** it puts back Fn lock and the firmware AniMe animations, and moves the Auto refresh rate with the charger.
 - **On plug and unplug**, about 2 s after Omarchy has switched the mode, it applies Battery saver and the refresh rate, and checks again a few seconds later. Your overdrive choice on the charger is remembered and put back.
 - **Silent's CPU limit** is written whenever Silent starts, the charger changes or the laptop wakes, since the firmware loads each mode's own limits then; leaving Silent hands them back to the firmware.
 - **After an Omarchy theme change** it re-applies your keyboard effect, since the theme switcher resets the keyboard to a static colour.
@@ -60,9 +60,28 @@ Two steps need root, both through `pkexec`. The first is Integrated GPU mode, do
 
 The second is the power helper, for the CPU limit, screen power saving, Wi-Fi power save and full speed. Turning one on the first time asks for your password once, to install `bin/rog-deck-power` as `/usr/local/libexec/rog-deck-power` (owned by root) and a polkit rule in `/etc/polkit-1/rules.d/49-rog-deck-power.rules` that lets you, at the laptop, run that one program without a password. It only takes CPU limits inside the firmware's range for your laptop and power source (from the kernel's asus-armoury table; GA402NV for now), panel power savings 0–4, Wi-Fi power save on or off, and one of four CPU energy preferences. To remove both: `bin/rog-deck power uninstall`.
 
-FN-lock calls a `fnlock on|off|status` command on your `PATH` (or in `~/.local/bin`). On a G14 that's a small keyd setup: the Fn key never reaches Linux, so keyd swaps the action row and F1–F12 while the lock is on. Without a `fnlock` command the switch is greyed out.
+Fn lock calls a `fnlock on|off|status` command on your `PATH` (or in `~/.local/bin`). On a G14 that's a small keyd setup: the Fn key never reaches Linux, so keyd swaps the action row and F1–F12 while the lock is on. Without a `fnlock` command the switch is greyed out.
+
+## Remove
+
+```bash
+~/.config/omarchy/plugins/io.github.t3lluz.rog-deck/bin/rog-deck power uninstall
+omarchy plugin remove io.github.t3lluz.rog-deck
+```
+
+Run the first line before removing the plugin, while the helper's files are still there to undo it: it hands the CPU limits and the energy preference back to the firmware and power-profiles-daemon, then removes `/usr/local/libexec/rog-deck-power` and its polkit rule (one password prompt). If you never turned on the CPU limit, Battery saver or full speed, there is nothing to undo and it changes nothing.
+
+What stays, on purpose:
+
+- What the laptop itself keeps: the power mode, the charge limit, the keyboard light, the fan curves and the AniMe Matrix settings live in the firmware and asusd, and stay as you last set them.
+- The GPU mode. Integrated is supergfxd's, set in `/etc/supergfxd.conf`; switch back with `supergfxctl` or Omarchy's own GPU menu.
+- The "Laptop" monitor profile ROG Deck saves for hyprmoncfg, so the screen keeps its rate.
+- Your settings in `~/.config/rog-deck/` and the update state in `~/.local/state/rog-deck/`, for a reinstall. Delete both folders for a clean slate.
+- Your `fnlock` command and keyd setup, which ROG Deck only calls.
 
 ## Shortcuts and IPC
+
+In the open panel: `,` (or `s` or `c`) for the settings, `Esc` to go back or close, left and right to walk the power modes and Enter to pick one, up and down to scroll.
 
 ```bash
 omarchy-shell io.github.t3lluz.rog-deck cycleProfile    # Silent → Balanced → Turbo → Silent
@@ -100,7 +119,7 @@ o.bind("XF86Launch4", "Next power mode", "omarchy-shell io.github.t3lluz.rog-dec
 - `Panel.qml` and `components/` draw the bar icon, the hover card and the panel: a file per room, the Rooms pieces shared with Batteries and Sonus, and the panel kit shared by all four plugins in this family.
 - `Model.js` holds the pure logic and `components/Rooms.js` the look's (tones, the block face, the pixel type, meters, motion), both tested under node.
 - The icons are [Pixelarticons](https://pixelarticons.com) (MIT), plus a fan and the AniMe Matrix drawn on the same grid, built into `components/Pixels.js` by `scripts/fetch-pixel-icons.py`, which also splits each into the parts that move. `components/Motion.js` says how each one moves: the needle swings to the new mode, the fan's blades turn, the mercury climbs, the keys light up in a sweep.
-- The text is in [Monocraft](https://github.com/IdreesInc/Monocraft) 4.2.1, bundled in `assets/fonts/` with its license (SIL OFL 1.1) and loaded by `Panel.qml`, so nothing needs installing. Its line spacing is widened (`scripts/fix-monocraft-metrics.py`); the glyphs are Monocraft's own.
+- The text is in [Monocraft](https://github.com/IdreesInc/Monocraft) 4.2.1, bundled in `assets/fonts/` with its license (SIL OFL 1.1) and loaded by `Panel.qml`, so nothing needs installing. `scripts/patch-font.py` builds it under the name "Monocraft ROG Deck", with ten font pixels to the em and an 11-pixel line, so every pixel of it lands on whole screen pixels; the glyphs are Monocraft's own, a few nudged onto the pixel grid.
 
 Details that matter:
 

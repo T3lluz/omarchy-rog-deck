@@ -44,7 +44,9 @@ Item {
 
   readonly property var art: custom || Pixels.icons[name] || null
   readonly property bool moving: !!art && !!art.parts
-  readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+  // The window's scale, not Screen's: on a 1.25 monitor Screen.devicePixelRatio
+  // says 2, and everything snapped for 2x there.
+  readonly property real dpr: Window.window && Window.window.devicePixelRatio > 0 ? Window.window.devicePixelRatio : 1
   // Device pixels across, in twelfths: odd counts take the halved grid. Its
   // strokes are this many device pixels thick either way.
   readonly property int twelfths: unit > 0 ? unit : Math.max(1, Math.round(size * dpr / 12))
@@ -86,24 +88,40 @@ Item {
   function frame() {
     var now = Date.now()
     var next = Motion.REST
+    var wake = 0
     if (playing) {
       var k = (now - startedAt) / playMs
       if (k >= 1) playing = false
-      else next = Motion.poseAt(name, k)
+      else {
+        next = Motion.poseAt(name, k)
+        wake = Motion.storyNext(name, k, playMs)
+      }
     }
-    if (!playing && looping) next = Motion.loopAt(name, loop, loopEvery, now % Motion.LOOP_MS)
+    if (!playing && looping) {
+      var t = now % Motion.LOOP_MS
+      next = Motion.loopAt(name, loop, loopEvery, t)
+      wake = Motion.loopNext(name, loop, loopEvery, t)
+    }
     var key = JSON.stringify(next)
     if (key !== poseKey) {
       poseKey = key
       pose = next
     }
+    // Wake when the pose next changes, not on a fixed beat.
+    ticker.stop()
+    if (wake > 0 && shown) {
+      ticker.interval = Math.max(1, Math.round(wake))
+      ticker.start()
+    }
   }
 
   onNameChanged: if (!playing) frame()
   onLoopingChanged: frame()
+  onLoopEveryChanged: frame()
   onShownChanged: {
     if (!shown) { wait.stop(); playing = false; frame() }
     else if (playOnShow) play(showDelay)
+    else frame()
   }
 
   Timer {
@@ -111,12 +129,10 @@ Item {
     onTriggered: icon.play(0)
   }
 
-  // About thirty frames a second: every pose is a step, so it only has to be
-  // sampled often enough to land each one.
+  // Fires once, when the pose next changes (Motion.storyNext, loopNext);
+  // frame() aims it again.
   Timer {
-    interval: 33
-    repeat: true
-    running: icon.shown && (icon.playing || icon.looping)
+    id: ticker
     onTriggered: icon.frame()
   }
 

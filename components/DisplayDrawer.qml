@@ -57,7 +57,7 @@ Column {
     hint: {
       var s = drawer.screenSaving
       if (!drawer.saver.enabled) return "Part of Battery saver, in the battery room"
-      if (s && s.level > 0) return "Saving now (level " + s.level + "): less backlight power, less accurate colours"
+      if (s && s.level > 0) return "Saving now: less backlight power, less accurate colours"
       return "On battery: less backlight power, less accurate colours"
     }
     checked: drawer.saver.enabled && drawer.saver.screen

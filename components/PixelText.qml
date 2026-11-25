@@ -14,7 +14,9 @@ Item {
   property real size: 9
   property int unit: 0
 
-  readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+  // The window's scale, not Screen's: on a 1.25 monitor Screen.devicePixelRatio
+  // says 2, and everything snapped for 2x there.
+  readonly property real dpr: Window.window && Window.window.devicePixelRatio > 0 ? Window.window.devicePixelRatio : 1
   readonly property int px: unit > 0 ? unit : Math.max(1, Math.round(size * dpr / 5))
   readonly property real cell: px / dpr
   readonly property var shape: Rooms.pixelText(text)

@@ -116,27 +116,25 @@ Item {
       }
 
       MonoText {
+        fontFamily: chart.fontFamily
+        step: "small"
         anchors.horizontalCenter: parent.horizontalCenter
         y: Math.max(0, chart.plotHeight - chart.plotHeight * point.p / 100 - height - Style.space(2))
         visible: chart.dragging && chart.activeIndex === index
         textFormat: Text.PlainText
         text: point.p + "%"
         color: chart.foreground
-        font.family: chart.fontFamily
-        font.pixelSize: Style.font.caption
-        font.bold: true
       }
 
       MonoText {
+        fontFamily: chart.fontFamily
+        step: "small"
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         textFormat: Text.PlainText
         text: point.t + "°"
         color: chart.foreground
         opacity: tempArea.containsMouse || (chart.editable && chart.selectedIndex === index) ? 1 : 0.6
-        font.bold: chart.editable && chart.selectedIndex === index
-        font.family: chart.fontFamily
-        font.pixelSize: Style.font.caption
 
         MouseArea {
           id: tempArea

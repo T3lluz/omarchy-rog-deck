@@ -6,7 +6,10 @@ import qs.Ui
 // a name in the room's tone, the one in use tinted deeper and outlined, as
 // Sonus outlines an app's channel. Every cell is as wide as the others and as
 // tall as the tallest name. `options` are { value, label, pixel, hint }.
-Row {
+// When the widest name won't fit a cell in one row (a panel with many
+// refresh rates), the cells wrap into rows of equal count, never a name
+// broken mid-word.
+Grid {
   id: choices
 
   required property var host
@@ -33,7 +36,33 @@ Row {
   width: parent ? parent.width : 0
   spacing: Style.space(3)
 
-  readonly property real cellWidth: shownOptions.length > 0 ? (width - spacing * (shownOptions.length - 1)) / shownOptions.length : 0
+  // The widest cell's content. Monocraft is monospaced, so a name is its
+  // length in the label's own advance (MonoText's, at the step it draws).
+  MonoText {
+    id: labelProbe
+    visible: false
+    fontFamily: choices.host.fontFamily
+    step: "small"
+  }
+  readonly property real neededCell: {
+    var widest = 0
+    for (var i = 0; i < shownOptions.length; i++) {
+      var o = shownOptions[i]
+      var w = Math.ceil(String(o.label || "").length * labelProbe.advance) + (o.pixel ? Style.font.body + Style.space(6) : 0)
+      widest = Math.max(widest, w)
+    }
+    return widest + Style.space(12)
+  }
+  readonly property int perRow: {
+    var n = shownOptions.length
+    if (n === 0 || width <= 0) return Math.max(1, n)
+    var fit = Math.max(1, Math.floor((width + spacing) / (neededCell + spacing)))
+    if (fit >= n) return n
+    var rows = Math.ceil(n / fit)
+    return Math.ceil(n / rows)
+  }
+  columns: perRow
+  readonly property real cellWidth: shownOptions.length > 0 ? (width - spacing * (perRow - 1)) / perRow : 0
   readonly property real rowHeight: {
     var h = 0
     for (var i = 0; i < children.length; i++) if (children[i].naturalHeight !== undefined) h = Math.max(h, children[i].naturalHeight)
@@ -80,6 +109,8 @@ Row {
         }
 
         MonoText {
+          fontFamily: choices.host.fontFamily
+          step: "small"
           anchors.verticalCenter: parent.verticalCenter
           width: Math.min(implicitWidth, cell.width - Style.space(8) - (cellIcon.visible ? cellIcon.width + content.spacing : 0))
           horizontalAlignment: Text.AlignHCenter
@@ -87,9 +118,6 @@ Row {
           textFormat: Text.PlainText
           text: cell.modelData.label
           color: cell.current ? choices.host.fg : choices.host.dim
-          font.family: choices.host.fontFamily
-          font.pixelSize: choices.compact ? Style.font.caption : Style.font.bodySmall
-          font.bold: cell.current
         }
       }
 

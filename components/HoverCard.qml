@@ -19,6 +19,8 @@ PopupWindow {
   property var rows: []
   // A line under the rows: an update waiting, a GPU switch waiting on a restart.
   property string note: ""
+  // A dim last line naming the clicks.
+  property string hint: ""
   // The panel's room colours (Rooms.roomToneHex) and the bar's figures' unit.
   property var palette: ({})
   property int unit: 2
@@ -72,7 +74,9 @@ PopupWindow {
   BorderSurface {
     id: frame
     opacity: card.revealed ? 1 : 0
-    implicitWidth: Style.space(280)
+    // As wide as the widest row wants, between 280 and 380, so a long name
+    // takes one line where it can.
+    implicitWidth: Math.min(Style.space(380), Math.max(Style.space(280), Math.ceil(list.rowsWanted) + Style.space(8) * 2))
     implicitHeight: list.implicitHeight + Style.space(8) * 2
     color: Commons.Color.tooltip.background
     borderSpec: Border.surfaceSpec("tooltip", "border", Commons.Color.tooltip.border, 1)
@@ -84,6 +88,11 @@ PopupWindow {
       y: Style.space(8)
       width: parent.width - x * 2
       spacing: Style.space(3)
+      readonly property real rowsWanted: {
+        var w = 0
+        for (var i = 0; i < children.length; i++) if (children[i].naturalWidth !== undefined) w = Math.max(w, children[i].naturalWidth)
+        return w
+      }
 
       // By count, so a refresh while the card is up changes values in place.
       Repeater {
@@ -98,11 +107,14 @@ PopupWindow {
           foreground: card.foreground
           unit: card.unit
           fontFamily: card.fontFamily
-          delay: 80 + index * 70
+          // One stagger down the card; each row's icon and mark go together.
+          delay: index * 70
         }
       }
 
       MonoText {
+        fontFamily: card.fontFamily
+        step: "small"
         visible: card.note !== ""
         width: list.width
         topPadding: Style.space(3)
@@ -110,9 +122,21 @@ PopupWindow {
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
         text: card.note
-        color: Qt.darker(card.foreground, 1.4)
-        font.family: card.fontFamily
-        font.pixelSize: Style.font.caption
+        color: Qt.tint(card.foreground, Qt.rgba(Commons.Color.tooltip.background.r, Commons.Color.tooltip.background.g, Commons.Color.tooltip.background.b, 0.35))
+      }
+
+      // What the bar item does, since nothing else says it.
+      MonoText {
+        fontFamily: card.fontFamily
+        step: "small"
+        visible: card.hint !== ""
+        width: list.width
+        topPadding: Style.space(3)
+        leftPadding: Style.space(6)
+        textFormat: Text.PlainText
+        wrapMode: Text.Wrap
+        text: card.hint
+        color: Qt.tint(card.foreground, Qt.rgba(Commons.Color.tooltip.background.r, Commons.Color.tooltip.background.g, Commons.Color.tooltip.background.b, 0.5))
       }
     }
   }

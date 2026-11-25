@@ -4,7 +4,7 @@ const path = require("path")
 const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*/, "")
-const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, heat, temperature, watts, rpm, maxFan, dgpuLabel, gpuModes, gpuModeInfo, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, formatSeconds, barParts, BAR_STATS, PROFILES, GPU_MODES, FAN_PRESETS, ANIME_CONTENT, gpuConfirmText, gpuNotice, saverOverdrive, pptTriple, powerLimitWatts, limitCaption, limitApplied, batteryGpuNotice, powerHelperNotice, screenLevel, speedWanted, speedPlan, speedHint, pixelWatts, pixelTemp, batteryPixel, ROOM_TONES, roomTone, powerState, powerMark, batteryRoom, fanParts, fansState, graphicsState, displayState, keyboardState, animeRoom, heroPhrases, roomLine, roomForTab, hoverRows, MODEL_PIXELS, batteryFacts, fansLine, fanFacts, heatState, fanFigure }")()
+const Model = new Function(source + "\nreturn { parseStatus, normalizeProfile, profileInfo, profileChoices, steppedProfile, wheelSteps, fanConfirm, actionKind, SWATCHES, SWATCH_NAMES, heatLevels, heatOf, heat, temperature, watts, rpm, maxFan, dgpuLabel, gpuModes, gpuModeInfo, batteryLine, tooltip, defaultSettings, mergeSettings, cleanHex, auraEffects, nextAuraEffect, auraArgs, animeBuiltins, animeContent, refreshTarget, curveString, clampPoint, formatSeconds, barParts, BAR_STATS, PROFILES, GPU_MODES, FAN_PRESETS, ANIME_CONTENT, gpuConfirmText, gpuNotice, saverOverdrive, pptTriple, powerLimitWatts, limitCaption, limitApplied, batteryGpuNotice, powerHelperNotice, screenLevel, speedWanted, speedPlan, speedHint, pixelWatts, pixelTemp, batteryPixel, ROOM_TONES, roomTone, powerState, powerMark, batteryRoom, fanParts, fansState, graphicsState, displayState, keyboardState, animeRoom, heroPhrases, roomLine, roomForTab, hoverRows, MODEL_PIXELS, batteryFacts, fansLine, fanFacts, heatState, fanFigure }")()
 
 // Trimmed from a real `bin/rog-deck status` on a GA402NV.
 const status = {
@@ -40,6 +40,33 @@ assert.deepStrictEqual(Model.profileChoices({ profile: { choices: ["performance"
   ["power-saver", "performance"], "tiles follow our order, not the daemon's")
 assert.deepStrictEqual(Model.profileChoices(null), [])
 
+for (const hex of Model.SWATCHES) assert.ok(Model.SWATCH_NAMES[hex], "swatch " + hex + " has a name for its tooltip")
+
+// Queued actions of one kind collapse to the newest; one-offs never do.
+assert.strictEqual(Model.actionKind(["kbd", "idle-off", "0"]), Model.actionKind(["kbd", "idle-on"]))
+assert.strictEqual(Model.actionKind(["power", "limit", "20"]), Model.actionKind(["power", "off"]))
+assert.strictEqual(Model.actionKind(["profile", "performance"]), "profile")
+assert.notStrictEqual(Model.actionKind(["fans", "set", "balanced", "cpu", "x"]), Model.actionKind(["fans", "set", "balanced", "gpu", "x"]))
+for (const once of [["battery", "oneshot"], ["fans", "preset", "balanced", "cool"], ["fans", "reset", "balanced"], ["aura"], ["takeover"], ["power", "setup"]])
+  assert.strictEqual(Model.actionKind(once), "", once.join(" ") + " always runs")
+
+// The wheel: a notch is a step, a touchpad's small deltas add up to one.
+assert.deepStrictEqual(Model.wheelSteps(0, 120), { steps: 1, acc: 0 })
+assert.deepStrictEqual(Model.wheelSteps(0, -120), { steps: -1, acc: 0 })
+let wheel = { steps: 0, acc: 0 }, stepped = 0
+for (let i = 0; i < 14; i++) { wheel = Model.wheelSteps(wheel.acc, 15); stepped += wheel.steps }
+assert.strictEqual(stepped, 1, "fourteen touchpad events of 15 make one notch")
+assert.strictEqual(wheel.acc, 90)
+assert.deepStrictEqual(Model.wheelSteps(90, -100), { steps: 0, acc: -10 }, "turning back cancels a part notch")
+assert.deepStrictEqual(Model.wheelSteps(0, 250), { steps: 2, acc: 10 })
+
+// A fan pick asks first when it throws a curve away.
+assert.strictEqual(Model.fanConfirm("balanced", "reset", false).confirmText, "Reset", "reset always asks")
+assert.ok(/Balanced/.test(Model.fanConfirm("balanced", "reset", true).message))
+assert.strictEqual(Model.fanConfirm("balanced", "cool", false), null, "a preset with the custom curve off just goes")
+assert.strictEqual(Model.fanConfirm("performance", "cool", true).confirmText, "Use Cool")
+assert.strictEqual(Model.fanConfirm("balanced", "nonsense", true), null)
+
 // steppedProfile stops at the ends
 assert.strictEqual(Model.steppedProfile(status, 120), "balanced")
 assert.strictEqual(Model.steppedProfile(status, -120), "")
@@ -53,6 +80,19 @@ assert.strictEqual(Model.heat(null), 0)
 assert.strictEqual(Model.heat(69.9), 0)
 assert.strictEqual(Model.heat(70), 1)
 assert.strictEqual(Model.heat(85), 2)
+// Hysteresis: up at once, down only 3 °C under the step.
+assert.strictEqual(Model.heat(84, 2), 2, "84 stays hot after 85")
+assert.strictEqual(Model.heat(82.5, 2), 2)
+assert.strictEqual(Model.heat(82, 2), 1, "82 is warm again")
+assert.strictEqual(Model.heat(68, 1), 1)
+assert.strictEqual(Model.heat(66, 2), 0, "a big drop goes straight down")
+assert.strictEqual(Model.heat(71, 0), 1, "climbing is at once")
+let levels = {}
+const temps = [84, 85, 84, 85, 84, 83, 82, 81]
+const words = temps.map(c => { levels = Model.heatLevels({ cpu: c }, levels); return Model.fanParts({ temps: { cpu: c }, fans: { cpu: 3000 }, heat: levels })[0].warmth })
+assert.deepStrictEqual(words, ["Warm", "Hot", "Hot", "Hot", "Hot", "Hot", "Warm", "Warm"], "a reading on the step doesn't flip each poll")
+assert.strictEqual(Model.heatOf({ temps: { cpu: 84 } }, "cpu"), 1, "without held levels, the plain steps")
+assert.strictEqual(Model.heatOf({ temps: { cpu: 84 }, heat: { cpu: 2 } }, "cpu"), 2)
 assert.strictEqual(Model.temperature(76.6), "77°")
 assert.strictEqual(Model.temperature(null), "—")
 assert.strictEqual(Model.watts(6.18), "6.2 W")
@@ -241,14 +281,14 @@ assert.strictEqual(Model.fansLine(0, true, true), "Stopped · custom curve")
 assert.strictEqual(Model.fansLine(null, false, false), "No fan reading")
 assert.deepStrictEqual(Model.fanFacts({ temps: { cpu: 88.4, gpu: null }, fans: { cpu: 3400, gpu: 0 }, dgpu: "suspended" }),
   [{ label: "CPU", value: "88 °C, 3.4k rpm" }, { label: "GPU", value: "asleep, fan off" }])
-assert.strictEqual(Model.fansState(false, false), "Reading the curves")
+assert.strictEqual(Model.fansState(false, false), "Reading fan curves")
 
 // Graphics, display, keyboard, AniMe lines.
 assert.strictEqual(Model.graphicsState({ mode: "hybrid" }, "active", 12.3, "hybrid"), "NVIDIA awake", "its draw is the figure")
 assert.strictEqual(Model.graphicsState({ mode: "hybrid" }, "suspended", null, "integrated"), "Integrated on restart")
 assert.strictEqual(Model.displayState("auto", false, true), "Auto rate")
 assert.strictEqual(Model.displayState("auto", true, false), "Battery saver")
-assert.strictEqual(Model.keyboardState(2, { enabled: true, timeout: 60, dimOnly: false }, true), "Off after 1 min · FN\u2011lock")
+assert.strictEqual(Model.keyboardState(2, { enabled: true, timeout: 60, dimOnly: false }, true), "Off after 1 min · Fn\u00a0lock")
 assert.strictEqual(Model.keyboardState(1, { enabled: true, timeout: 30, dimOnly: true }, false), "Dims after 30 s")
 assert.strictEqual(Model.keyboardState(3, { enabled: false }, false), "Stays lit")
 assert.strictEqual(Model.keyboardState(0, { enabled: true, timeout: 60 }, false), "Off")

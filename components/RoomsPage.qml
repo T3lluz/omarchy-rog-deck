@@ -33,12 +33,12 @@ Column {
       title: "ROG Deck"
       line: page.host.heroLine
       lineKey: page.host.heroKey
-      lineColor: page.host.gpuAsk !== "" || (page.host.status && !page.host.ready) ? page.host.lowTone : Qt.darker(page.host.fg, 1.3)
+      lineColor: page.host.gpuAsk !== "" || (page.host.status && !page.host.ready) ? page.host.lowTone : page.host.quiet(page.host.fg, 0.25)
 
       PixelButton {
         icon: "settings-cog"
         angle: Math.round(page.host.gearTurn * -2) * 45
-        tooltipText: "Settings (s)"
+        tooltipText: "Settings (,)"
         foreground: page.host.fg
         fontFamily: page.host.fontFamily
         onClicked: page.host.setView("settings")

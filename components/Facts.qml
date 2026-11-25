@@ -33,18 +33,19 @@ Grid {
       implicitHeight: Math.max(pairLabel.implicitHeight, pairValue.implicitHeight)
 
       MonoText {
+        fontFamily: factGrid.host.fontFamily
+        step: "small"
         id: pairLabel
         width: Math.min(implicitWidth, pair.width * 0.55)
         wrapMode: Text.Wrap
         textFormat: Text.PlainText
         text: pair.modelData.label
-        color: factGrid.host.fg
-        opacity: 0.6
-        font.family: factGrid.host.fontFamily
-        font.pixelSize: Style.font.bodySmall
+        color: factGrid.host.dim
       }
 
       Decode {
+        fontFamily: factGrid.host.fontFamily
+        step: "small"
         id: pairValue
         host: factGrid.host
         anchors.right: parent.right
@@ -54,8 +55,6 @@ Grid {
         value: pair.modelData.value
         delay: factGrid.delay + pair.index * 40
         color: factGrid.host.fg
-        font.family: factGrid.host.fontFamily
-        font.pixelSize: Style.font.bodySmall
       }
     }
   }

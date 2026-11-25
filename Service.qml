@@ -9,7 +9,7 @@ import "components"
 // Headless half of ROG Deck. It stays loaded whether or not the bar widget
 // is placed: it owns the one status poller every panel reads from, runs
 // actions through bin/rog-deck, keeps the settings file, and does the jobs
-// that must happen with the panel closed: keyboard auto-off, putting FN-lock
+// that must happen with the panel closed: keyboard auto-off, putting Fn lock
 // back after login, following the charger for the Auto refresh rate and
 // Battery saver, holding Silent's CPU limit and full speed on the charger,
 // and re-applying the keyboard effect after a theme change.
@@ -86,8 +86,19 @@ Item {
     optimistic = next
   }
 
+  // A status read that started before an action finished can land after
+  // it, holding the old state. Each finished action bumps actionSeq; a read
+  // remembers the seq it started at, and only a read that started after
+  // the last action may clear the optimistic picks. Without this the mode
+  // pick and the bar icon flicked back for a poll (3 s open, 20 s closed).
+  property int actionSeq: 0
+  property int readSeq: 0
+  property bool rereadWanted: false
+
   function refresh() {
-    if (!statusProc.running) statusProc.running = true
+    if (statusProc.running) return
+    readSeq = actionSeq
+    statusProc.running = true
   }
 
   function refreshFans() {
@@ -104,12 +115,15 @@ Item {
   function applyStatus(text) {
     var next = Model.parseStatus(text)
     if (!next) {
-      lastError = "rog-deck status returned nothing"
+      // What the backend said is in the log (statusProc's stderr).
+      lastError = "Couldn't read the laptop"
       return
     }
     var helperWas = status && status.power ? status.power.helper : ""
+    // Cool, warm and hot, held against the last read (Model.heatLevels).
+    next.heat = Model.heatLevels(next.temps, status ? status.heat : null)
     status = next
-    if (!actionProc.running && actionQueue.length === 0) optimistic = ({})
+    if (readSeq === actionSeq && !actionProc.running && actionQueue.length === 0) optimistic = ({})
     // The helper just got set up: put the limit and Wi-Fi in place.
     if (helperWas && helperWas !== "ok" && next.power && next.power.helper === "ok") schedulePower(true)
     // Omarchy remembers a profile for AC and one for battery and applies it
@@ -153,7 +167,7 @@ Item {
     applyPower(true, false)
   }
 
-  // Keep the saved FN-lock choice in step with Shift+Esc, and the panel
+  // Keep the saved Fn lock choice in step with Shift+Esc, and the panel
   // overdrive choice made on the charger, to put back after the battery.
   function syncFromStatus() {
     if (actionProc.running || actionQueue.length > 0) return
@@ -296,9 +310,9 @@ Item {
     var power = status ? status.power : null
     if (!power || !(power.supported || anyModel) || power.helper === "ok") return
     // One password prompt, however often the switch is clicked meanwhile.
-    function isSetup(action) { return action[1] === "power" && action[2] === "setup" }
-    if ((actionProc.running && isSetup(currentAction)) || actionQueue.some(isSetup)) return
-    run(["power", "setup"])
+    // It runs on its own: the prompt can wait minutes, and nothing else
+    // should queue behind it.
+    if (!setupProc.running) setupProc.running = true
   }
 
   // ------------------------------------------------------------- settings
@@ -326,7 +340,12 @@ Item {
 
   function run(args) {
     // Actions are short; queue rather than drop one that arrives mid-run.
-    actionQueue.push([root.backend].concat(args))
+    // A newer action of the same kind replaces a queued one
+    // (Model.actionKind), so nothing runs stale.
+    var kind = Model.actionKind(args)
+    var queue = kind ? actionQueue.filter(function(a) { return Model.actionKind(a.slice(1)) !== kind }) : actionQueue.slice()
+    queue.push([root.backend].concat(args))
+    actionQueue = queue
     pumpActions()
   }
 
@@ -456,7 +475,7 @@ Item {
     run(["anime", "builtins", b.boot, b.awake, b.sleep, b.shutdown])
   }
 
-  // Battery, firmware, display, FN-lock ---------------------------------
+  // Battery, firmware, display, Fn lock ---------------------------------
 
   function setChargeLimit(limit) {
     setOptimistic("battery.limit", limit)
@@ -578,6 +597,7 @@ Item {
     command: [root.backend, "status"]
     stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.applyStatus(text) }
     stderr: StdioCollector { waitForEnd: true; onStreamFinished: if (text.trim()) console.warn("rog-deck status: " + text.trim()) }
+    onExited: if (root.rereadWanted) { root.rereadWanted = false; root.refresh() }
   }
 
   Process {
@@ -590,6 +610,26 @@ Item {
         if (data) root.fanCurves = data
       }
     }
+  }
+
+  // `power setup` and its pkexec password prompt. The power actions wait
+  // for the helper anyway (they check `helper === "ok"`), and the status
+  // read after it applies them.
+  Process {
+    id: setupProc
+    command: [root.backend, "power", "setup"]
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var message = text.trim()
+        if (message) {
+          root.lastError = message.replace(/^rog-deck: /, "")
+          console.warn("rog-deck: " + message)
+          errorClear.restart()
+        }
+      }
+    }
+    onExited: root.refresh()
   }
 
   Process {
@@ -606,9 +646,13 @@ Item {
       }
     }
     onExited: function(code) {
+      root.actionSeq++
       if (code !== 0) root.optimistic = ({})
       if (root.currentAction[1] === "fans") root.refreshFans()
-      root.refresh()
+      // A read already running started before this action landed: read
+      // again once it is in.
+      if (statusProc.running) root.rereadWanted = true
+      else root.refresh()
       root.pumpActions()
     }
   }

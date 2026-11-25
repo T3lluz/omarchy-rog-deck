@@ -73,6 +73,8 @@ Item {
       height: titleText.height
 
       MonoText {
+        fontFamily: head.host.fontFamily
+        step: "body"
         id: titleText
         readonly property real room: chevron.visible ? chevron.width + Style.space(5) : 0
         property real lastRight: 0
@@ -83,9 +85,6 @@ Item {
         wrapMode: Text.Wrap
         text: head.title
         color: head.dimmed ? head.host.dim : head.host.fg
-        font.family: head.host.fontFamily
-        font.pixelSize: Style.font.body
-        font.bold: true
         onLineLaidOut: function(line) {
           if (!line.isLast) return
           lastRight = line.x + line.implicitWidth
@@ -108,6 +107,8 @@ Item {
     }
 
     Decode {
+      fontFamily: head.host.fontFamily
+      step: "small"
       host: head.host
       width: parent.width
       visible: value !== ""
@@ -115,8 +116,6 @@ Item {
       value: head.status
       delay: head.delay
       color: head.host.dim
-      font.family: head.host.fontFamily
-      font.pixelSize: Style.font.caption
     }
   }
 
@@ -134,6 +133,7 @@ Item {
     y: Math.round((head.naturalHeight - implicitHeight) / 2)
     // Slides to a new reading rather than jumping to it.
     value: count.known ? count.shown : null
+    target: head.value
     suffix: head.suffix
     tone: head.figureTone
     foreground: head.host.fg

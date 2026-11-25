@@ -3,7 +3,7 @@ import qs.Commons
 import "../Model.js" as Model
 
 // The keyboard room opened: auto-off and how long it waits, whether the
-// charger keeps it lit or it only dims, and FN-lock. Lighting at startup,
+// charger keeps it lit or it only dims, and Fn lock. Lighting at startup,
 // sleep and shutdown, and the RGB effects, are on the settings page.
 Column {
   id: drawer
@@ -71,9 +71,9 @@ Column {
     width: parent.width
     interactive: drawer.fnlockAvailable
     icon: ""
-    label: "FN-lock"
+    label: "Fn lock"
     hint: drawer.fnlockAvailable ? "The top row does its printed media actions; hold Fn for F1 to F12. Shift+Esc toggles it too"
-                                 : "Not set up: needs the fnlock command (see the README)"
+                                 : "Needs the fnlock tool, which isn't installed"
     checked: drawer.fnlockAvailable && drawer.service ? !!drawer.service.pick("fnlock", drawer.status.fnlock.on) : false
     foreground: drawer.host.fg
     accent: drawer.tone

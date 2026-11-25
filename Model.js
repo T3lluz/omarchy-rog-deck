@@ -57,12 +57,70 @@ function steppedProfile(status, delta) {
   return next === index ? "" : choices[next].key
 }
 
-// 0 cool, 1 warm, 2 hot.
-function heat(celsius) {
+// What a queued backend action sets, for the actions where a later one of
+// the same kind makes an earlier one pointless: the queue keeps only the
+// newest. Behind a slow action, keyboard idle-off and idle-on and the
+// charger's power writes used to pile up and then run as a stale burst.
+// "" for actions that must each run (Full once, a preset, a reset).
+function actionKind(args) {
+  var a = args || []
+  var cmd = a[0], sub = a[1]
+  if (cmd === "kbd" && (sub === "idle-on" || sub === "idle-off")) return "kbd idle"
+  if (cmd === "kbd" && sub === "brightness") return "kbd brightness"
+  if (cmd === "power" && (sub === "limit" || sub === "off")) return "power limit"
+  if (cmd === "speed" || cmd === "profile" || cmd === "refresh" || cmd === "fnlock" || cmd === "gpu") return cmd
+  if (cmd === "saver" && (sub === "screen" || sub === "wifi")) return "saver " + sub
+  if (cmd === "anime" && (sub === "on" || sub === "off")) return "anime power"
+  if (cmd === "anime" && sub === "brightness") return "anime brightness"
+  if (cmd === "battery" && sub === "limit") return "battery limit"
+  if (cmd === "fans" && sub === "custom") return "fans custom " + a[2]
+  if (cmd === "fans" && sub === "set") return "fans set " + a[2] + " " + a[3]
+  return ""
+}
+
+// The hover card's last lines: what the bar item does. Two lines on
+// purpose: one wrapped wherever the card's width fell.
+var HOVER_HINT = "Click: panel · Right: settings\nMiddle: light · Scroll: mode"
+
+// Wheel scrolling in notches: a mouse wheel's notch is 120 units of
+// angleDelta, a touchpad sends many small ones. `acc` carries what hasn't
+// made a notch yet; each whole notch is one step, so one swipe of the
+// touchpad moves one mode, not one per event.
+var WHEEL_NOTCH = 120
+
+function wheelSteps(acc, delta) {
+  acc = (acc || 0) + (delta || 0)
+  var steps = (acc > 0 ? Math.floor(acc / WHEEL_NOTCH) : Math.ceil(acc / WHEEL_NOTCH)) + 0
+  return { steps: steps, acc: acc - steps * WHEEL_NOTCH }
+}
+
+// 0 cool, 1 warm, 2 hot. With `previous`, the level the reading had last
+// time, it climbs at once but only drops HEAT_HOLD under the step it is
+// leaving: a temperature sitting on a step flipped the word, the colour and
+// the hot mark (and replayed the icon) on every poll.
+var HEAT_STEPS = [70, 85]
+var HEAT_HOLD = 3
+
+function heat(celsius, previous) {
   if (celsius === null || celsius === undefined) return 0
-  if (celsius >= 85) return 2
-  if (celsius >= 70) return 1
-  return 0
+  var level = celsius >= HEAT_STEPS[1] ? 2 : celsius >= HEAT_STEPS[0] ? 1 : 0
+  if (previous > level && celsius > HEAT_STEPS[previous - 1] - HEAT_HOLD) return previous
+  return level
+}
+
+// The CPU's and GPU's levels for a new status, held against the last ones.
+// The service keeps them on the status as `heat`.
+function heatLevels(temps, previous) {
+  var t = temps || {}, p = previous || {}
+  return { cpu: heat(t.cpu, p.cpu), gpu: heat(t.gpu, p.gpu) }
+}
+
+// A part's level from a status: the held one when the service has it.
+function heatOf(status, part) {
+  var t = status && status.temps ? status.temps[part] : null
+  if (t === null || t === undefined) return 0
+  var held = status.heat ? status.heat[part] : undefined
+  return held === undefined ? heat(t) : held
 }
 
 function temperature(value) {
@@ -200,6 +258,9 @@ var IDLE_TIMEOUTS = [
 ]
 
 var SWATCHES = ["ffffff", "ff0033", "ff7a00", "ffd400", "00e676", "00b0ff", "2962ff", "d500f9"]
+// What each swatch's tooltip calls it.
+var SWATCH_NAMES = { ffffff: "White", ff0033: "Red", ff7a00: "Orange", ffd400: "Yellow", "00e676": "Green",
+                     "00b0ff": "Sky blue", "2962ff": "Blue", d500f9: "Purple" }
 
 function auraEffect(key) {
   for (var i = 0; i < AURA_EFFECTS.length; i++) if (AURA_EFFECTS[i].key === key) return AURA_EFFECTS[i]
@@ -464,10 +525,10 @@ function barParts(status, picked) {
       var info = profileInfo(status.profile && status.profile.active)
       parts.push({ stat: stat, icon: "", text: "", word: info.label, hot: false })
     } else if (stat === "cpuTemp") {
-      add(stat, "thermometer", pixelTemp(t.cpu), heat(t.cpu) === 2)
+      add(stat, "thermometer", pixelTemp(t.cpu), heatOf(status, "cpu") === 2)
     } else if (stat === "gpuTemp") {
       // No reading while the dGPU sleeps; it is not woken to get one.
-      if (t.gpu !== null && t.gpu !== undefined) add(stat, "gpu", pixelTemp(t.gpu), heat(t.gpu) === 2)
+      if (t.gpu !== null && t.gpu !== undefined) add(stat, "gpu", pixelTemp(t.gpu), heatOf(status, "gpu") === 2)
     } else if (stat === "fans") {
       var fan = maxFan(status)
       if (fan !== null) add(stat, "fan", rpm(fan))
@@ -575,23 +636,24 @@ function fanParts(status) {
   var parts = []
   function fanLine(value) { return value === null || value === undefined ? "no fan reading" : value === 0 ? "fan off" : rpm(value) + " rpm" }
   // How warm, in a word, for the line under the part's name.
-  function warmth(temp, asleep) {
+  function warmth(part, asleep) {
+    var temp = t[part]
     if (temp === null || temp === undefined) return asleep ? "Asleep" : "No reading"
-    return ["Cool", "Warm", "Hot"][heat(temp)]
+    return ["Cool", "Warm", "Hot"][heatOf(status, part)]
   }
   if (t.cpu !== undefined || f.cpu !== undefined)
     parts.push({ key: "cpu", label: "CPU", icon: "cpu", temp: t.cpu === undefined ? null : t.cpu, rpm: f.cpu === undefined ? null : f.cpu,
-                 state: fanLine(f.cpu), warmth: warmth(t.cpu, false), hot: heat(t.cpu) === 2 })
+                 state: fanLine(f.cpu), warmth: warmth("cpu", false), hot: heatOf(status, "cpu") === 2 })
   if (t.gpu !== undefined || f.gpu !== undefined) {
     var asleep = (t.gpu === null || t.gpu === undefined) && status && status.dgpu !== "active"
     parts.push({ key: "gpu", label: "GPU", icon: "gpu", temp: t.gpu === undefined ? null : t.gpu, rpm: f.gpu === undefined ? null : f.gpu,
-                 state: (asleep ? "asleep · " : "") + fanLine(f.gpu), warmth: warmth(t.gpu, asleep), hot: heat(t.gpu) === 2 })
+                 state: (asleep ? "asleep · " : "") + fanLine(f.gpu), warmth: warmth("gpu", asleep), hot: heatOf(status, "gpu") === 2 })
   }
   return parts
 }
 
 function fansState(custom, known) {
-  if (!known) return "Reading the curves"
+  if (!known) return "Reading fan curves"
   return custom ? "Custom curve" : "Firmware curve"
 }
 
@@ -652,15 +714,15 @@ function displayState(refresh, saverActive, ac) {
   return "Set by Hyprland"
 }
 
-// The keyboard room's line: what turns it off, and FN-lock. The level is in
+// The keyboard room's line: what turns it off, and Fn lock. The level is in
 // the cells under it.
 function keyboardState(level, idle, fnlockOn) {
   var parts = []
   if (!(level > 0)) parts.push("Off")
   else if (idle && idle.enabled) parts.push((idle.dimOnly ? "Dims" : "Off") + " after " + formatSeconds(idle.timeout))
   else parts.push("Stays lit")
-  // A hyphen that does not break, so FN-lock never splits across lines.
-  if (fnlockOn) parts.push("FN\u2011lock")
+  // A space that does not break, so Fn lock never splits across lines.
+  if (fnlockOn) parts.push("Fn\u00a0lock")
   return parts.join(" · ")
 }
 
@@ -722,7 +784,7 @@ function roomLine(room, profile) {
   if (room === "fans") return "Fan curves follow the mode, " + profileInfo(profile).label + " now"
   if (room === "display") return "The refresh rate and the panel's switches"
   if (room === "graphics") return "Switching the GPU mode restarts the laptop"
-  if (room === "keyboard") return "When the light turns itself off, and FN-lock"
+  if (room === "keyboard") return "When the light turns itself off, and Fn lock"
   if (room === "anime") return "What the lid shows, and when it rests"
   return ""
 }
@@ -741,12 +803,12 @@ function hoverRows(status, ctx) {
   var t = status.temps || {}
   if (t.cpu !== null && t.cpu !== undefined)
     rows.push({ key: "cpu", name: "CPU", icon: "cpu", tone: roomTone("fans"), level: Math.max(0, Math.min(100, t.cpu)),
-                figure: pixelTemp(t.cpu), mark: heat(t.cpu) === 2 ? "thermometer" : "", dimmed: false })
+                figure: pixelTemp(t.cpu), mark: heatOf(status, "cpu") === 2 ? "thermometer" : "", dimmed: false })
   if (status.dgpu) {
     var awake = t.gpu !== null && t.gpu !== undefined
     rows.push({ key: "gpu", name: "NVIDIA " + dgpuLabel(status.dgpu), icon: "gpu", tone: roomTone("graphics"),
                 level: awake ? Math.max(0, Math.min(100, t.gpu)) : null, figure: awake ? pixelTemp(t.gpu) : "",
-                mark: awake && heat(t.gpu) === 2 ? "thermometer" : "", dimmed: !awake })
+                mark: awake && heatOf(status, "gpu") === 2 ? "thermometer" : "", dimmed: !awake })
   }
   var fan = maxFan(status)
   if (fan !== null) rows.push({ key: "fans", name: "Fans", icon: "fan", tone: roomTone("fans"), level: null, figure: rpm(fan), mark: "", dimmed: fan === 0 })
@@ -786,6 +848,23 @@ function tooltip(status) {
 }
 
 // -------------------------------------------------------------- notices
+
+// Whether a fan pick asks first, and what it asks. Reset throws the mode's
+// curve away; a preset writes over it, which only costs something while
+// the custom curve is on (off, the preset just switches it on). null goes
+// ahead without asking.
+function fanConfirm(mode, action, custom) {
+  var name = profileInfo(mode).label
+  if (action === "reset")
+    return { message: "Reset the " + name + " fan curves to the firmware's? Your curves for both fans are lost.",
+             confirmText: "Reset" }
+  if (!custom) return null
+  var preset = null
+  for (var i = 0; i < FAN_PRESETS.length; i++) if (FAN_PRESETS[i].value === action) preset = FAN_PRESETS[i]
+  if (!preset) return null
+  return { message: "Replace your " + name + " fan curves with " + preset.label + "? Both fans change.",
+           confirmText: "Use " + preset.label }
+}
 
 // The confirm prompt for a GPU switch.
 function gpuConfirmText(gpu, mode) {

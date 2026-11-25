@@ -24,6 +24,14 @@ helper = load("rog_deck_power", "rog-deck-power")
 backend = load("rog_deck", "rog-deck")
 
 
+class Numbers(unittest.TestCase):
+    def test_a_bad_number_fails_with_a_message_not_a_traceback(self):
+        with self.assertRaises(backend.Failure) as caught:
+            backend.number("abc", "the CPU limit")
+        self.assertIn("the CPU limit must be a whole number", str(caught.exception))
+        self.assertEqual(backend.number("25", "the CPU limit"), 25)
+
+
 class HelperChecks(unittest.TestCase):
     def table(self, ac):
         return helper.limits("GA402NV", ac=ac)

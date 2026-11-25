@@ -43,8 +43,7 @@ Column {
       .concat([{ value: "reset", label: "Reset", pixel: "undo", hint: "The firmware's curve, custom off" }])
     value: ""
     onPicked: function(v) {
-      if (v === "reset") drawer.service.resetFans(drawer.mode)
-      else drawer.service.setFanPreset(drawer.mode, v)
+      drawer.host.pickFans(drawer.mode, v, drawer.custom)
     }
   }
 
@@ -62,7 +61,7 @@ Column {
   Caption {
     width: parent.width
     visible: !drawer.curve
-    text: drawer.curves ? "This laptop has no fan curves in asusd." : "Reading the fan curves…"
+    text: drawer.curves ? "This laptop has no custom fan curves" : "Reading fan curves…"
     foreground: drawer.host.fg
     fontFamily: drawer.host.fontFamily
   }

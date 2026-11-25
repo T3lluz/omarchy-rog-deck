@@ -15,7 +15,7 @@ const Rooms = load("components/Rooms.js", ["hasLevel", "UI_PIXELS", "GLYPH_PIXEL
   "contrast", "TONE_HUES", "hexRgb", "roomToneHex", "bigDigits", "PIXEL_FONT", "pixelText", "drawable", "METER", "meterCells",
   "faderValue", "revealLine", "scramble"])
 const Motion = load("components/Motion.js", ["LOOP_MS", "REST", "STORIES", "hasStory", "duration", "poseAt", "loopAt",
-  "SPIN_STEPS", "spinInterval"])
+  "SPIN_STEPS", "spinInterval", "storyNext", "loopNext", "PROBE_MS"])
 const Model = load("Model.js", ["MODEL_PIXELS", "PROFILES", "GPU_MODES", "FAN_PRESETS", "ANIME_CONTENT", "ROOM_TONES",
   "barParts", "hoverRows", "batteryPixel"])
 const { icons } = load("components/Pixels.js", ["icons"])
@@ -230,6 +230,28 @@ assert.deepStrictEqual(Motion.loopAt("fan", "spin", 200, 0), Motion.loopAt("fan"
 assert.deepStrictEqual(Motion.loopAt("thermometer", "burst", 2400, 0), Motion.REST, "a burst starts at rest")
 assert.deepStrictEqual(Motion.loopAt("thermometer", "burst", 2400, 2000), Motion.REST, "and rests between bursts")
 assert.notDeepStrictEqual(Motion.loopAt("thermometer", "burst", 2400, 300), Motion.REST, "and moves in them")
+// The player wakes when the pose changes, never late by more than a probe.
+for (const name of Object.keys(Motion.STORIES)) {
+  const ms = Motion.duration(name)
+  let k = 0, steps = 0
+  while (k < 1 && steps < 500) {
+    const dt = Motion.storyNext(name, k, ms)
+    assert.ok(dt > 0, name + " always moves on")
+    const before = JSON.stringify(Motion.poseAt(name, k))
+    if (k + dt / ms < 1) {
+      assert.notStrictEqual(JSON.stringify(Motion.poseAt(name, k + dt / ms)), before, name + " changes when it says")
+      assert.strictEqual(JSON.stringify(Motion.poseAt(name, k + (dt - Motion.PROBE_MS) / ms)), before, name + " and not before")
+    }
+    k += dt / ms
+    steps++
+  }
+}
+// A busy icon turns a quarter at a time, coming round with the clock.
+assert.deepStrictEqual([0, 300, 600, 900, 1200].map(t => Motion.loopAt("reload", "turn", 300, t).turn), [0, 90, 180, 270, 0])
+assert.strictEqual(Motion.LOOP_MS % (4 * 300), 0)
+assert.strictEqual(Motion.loopNext("fan", "spin", 150, 0), 150)
+assert.strictEqual(Motion.loopNext("fan", "spin", 150, 140), 10, "a spin wakes on its flip")
+assert.strictEqual(Motion.loopNext("thermometer", "burst", 2400, 2000), 400, "between bursts it waits for the next")
 assert.strictEqual(Motion.spinInterval(0), 0, "still fans hold still")
 assert.strictEqual(Motion.spinInterval(null), 0)
 assert.ok(Motion.spinInterval(6000) < Motion.spinInterval(2000), "faster fans turn faster")
@@ -242,10 +264,29 @@ assert.strictEqual(noise.charAt(4), "·")
 assert.strictEqual(Rooms.scramble("Held", 1, 0), "Held")
 
 // The prompt lays out the whole line from the first character.
-assert.strictEqual(Rooms.revealLine("ab", 0, true), "▌<font color=\"#00000000\">b▌</font>")
-assert.strictEqual(Rooms.revealLine("a b", 1, true), "a <font color=\"#00000000\">b▌</font>")
-assert.strictEqual(Rooms.revealLine("ab", 2, true), "ab▌")
-assert.strictEqual(Rooms.revealLine("ab", 2, false), "ab<font color=\"#00000000\">▌</font>")
-assert.strictEqual(Rooms.revealLine("<a&b>", 5, true), "&lt;a&amp;b&gt;▌")
+assert.strictEqual(Rooms.revealLine("ab", 0, true), "_<font color=\"#00000000\">b_</font>")
+assert.strictEqual(Rooms.revealLine("a b", 1, true), "a <font color=\"#00000000\">b_</font>")
+assert.strictEqual(Rooms.revealLine("ab", 2, true), "ab_")
+assert.strictEqual(Rooms.revealLine("ab", 2, false), "ab<font color=\"#00000000\">_</font>")
+assert.strictEqual(Rooms.revealLine("<a&b>", 5, true), "&lt;a&amp;b&gt;_")
+// Every character the prompt and the panel's words use is in Monocraft;
+// one it lacks falls back to a taller font and the row jumps.
+{
+  const { execFileSync } = require("child_process")
+  const cmap = JSON.parse(execFileSync("python3", ["-I", "-c",
+    "import json,sys\nfrom fontTools.ttLib import TTFont\nprint(json.dumps(sorted(TTFont(sys.argv[1]).getBestCmap())))",
+    path.join(root, "assets/fonts/Monocraft.ttf")]).toString())
+  const has = new Set(cmap)
+  // The block face's characters are drawn as rectangles, never typed.
+  const DRAWN = new Set(["█", "▀", "▄"])
+  const sources = qmlFiles.concat(["components/Rooms.js", "components/Motion.js", "Model.js"].map(f => path.join(root, f)))
+  for (const file of sources) {
+    for (const ch of fs.readFileSync(file, "utf8")) {
+      const code = ch.codePointAt(0)
+      if (code > 126 && code < 0xE000 && !DRAWN.has(ch))
+        assert.ok(has.has(code), path.basename(file) + " uses " + ch + " (U+" + code.toString(16) + "), which Monocraft lacks")
+    }
+  }
+}
 
 console.log("rooms tests passed")

@@ -39,7 +39,7 @@ var GLYPH_PIXELS = [
   [0xF0079, "battery-full"],
   [0xF0084, "zap"],              // charging
   [0xF0085, "battery-full"],     // charge once
-  [0xF033E, "lock"],             // FN-lock, the power helper
+  [0xF033E, "lock"],             // Fn lock, the power helper
   [0xF030C, "keyboard"],
   [0xF15FC, "matrix"],           // AniMe Matrix
   [0xF00DE, "sun"],              // brightness
@@ -325,8 +325,11 @@ function escapeHtml(text) {
 // the whole line plus a cursor cell, the part not typed yet drawn clear, so a
 // word never wraps differently while it types. The cursor stands in for the
 // next character, except a space, which it would glue to the next word; once
-// typed, it blinks in the cell kept for it at the end.
-var CURSOR = "▌"
+// typed, it blinks in the cell kept for it at the end. An underscore, the
+// terminal's own cursor, because Monocraft has no block characters: a glyph
+// it lacks comes from a fallback font with taller lines, and the row grew
+// and shrank as the cursor moved (Sonus's finding).
+var CURSOR = "_"
 var CLEAR = "<font color=\"#00000000\">"
 
 function revealLine(line, typed, cursorOn) {

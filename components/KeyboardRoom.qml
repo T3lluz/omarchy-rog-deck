@@ -4,7 +4,7 @@ import "../Model.js" as Model
 
 // The keyboard light: a button that turns it off and back on, then its level
 // as three cells (Low, Med, High), each one click. Its drawer
-// (KeyboardDrawer) holds auto-off and FN-lock.
+// (KeyboardDrawer) holds auto-off and Fn lock.
 Room {
   id: room
 

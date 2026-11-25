@@ -209,18 +209,39 @@ Column {
       model: Model.SWATCHES
 
       Rectangle {
+        id: swatch
         required property string modelData
+        readonly property bool picked: page.light.colour === modelData
         width: swatches.size
         height: Style.space(22)
         radius: Style.cornerRadius
         color: "#" + modelData
-        border.width: page.light.colour === modelData ? Math.max(2, Style.space(2)) : 0
-        border.color: page.host.fg
+
+        // The ring sits outside the swatch, against the panel, so it shows
+        // whatever the swatch's colour (a white one on a light theme lost a
+        // border drawn on it). Faint under the pointer, full when picked.
+        Rectangle {
+          anchors.fill: parent
+          anchors.margins: -Math.max(2, Style.space(3))
+          radius: swatch.radius + Math.max(2, Style.space(3))
+          color: "transparent"
+          visible: swatch.picked || swatchArea.containsMouse
+          border.width: Math.max(1, Style.space(swatch.picked ? 2 : 1))
+          border.color: Qt.rgba(page.host.fg.r, page.host.fg.g, page.host.fg.b, swatch.picked ? 0.9 : 0.45)
+        }
 
         MouseArea {
+          id: swatchArea
           anchors.fill: parent
+          hoverEnabled: true
           cursorShape: Qt.PointingHandCursor
-          onClicked: page.service.setLighting("colour", parent.modelData)
+          onClicked: page.service.setLighting("colour", swatch.modelData)
+        }
+
+        PanelToolTip {
+          visible: swatchArea.containsMouse
+          text: (Model.SWATCH_NAMES[swatch.modelData] || ("#" + swatch.modelData)) + (swatch.picked ? " (in use)" : "")
+          fontFamily: page.host.fontFamily
         }
       }
     }
@@ -258,6 +279,8 @@ Column {
       }
 
       MonoText {
+        fontFamily: page.host.fontFamily
+        step: "body"
         id: slotLabel
         anchors.left: slotIcon.right
         anchors.leftMargin: Style.space(10)
@@ -268,8 +291,6 @@ Column {
         textFormat: Text.PlainText
         text: parent.modelData.label
         color: page.host.fg
-        font.family: page.host.fontFamily
-        font.pixelSize: Style.font.body
       }
 
       Seg {

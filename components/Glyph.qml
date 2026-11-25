@@ -16,7 +16,11 @@ Item {
   property color color: Commons.Color.foreground
   property string fontFamily: Style.font.family
 
-  readonly property string pixel: Rooms.pixelFor(icon)
+  // A banner at work (Notice's `busy`: an update installing) has no icon of
+  // its own that turns, so it shows the reload arrows going round a quarter
+  // at a time. Notice is the glyph's parent and no longer spins it.
+  readonly property bool busy: !!parent && parent.busy === true
+  readonly property string pixel: busy ? "reload" : Rooms.pixelFor(icon)
 
   implicitWidth: size
   implicitHeight: size
@@ -33,6 +37,8 @@ Item {
     name: glyph.pixel
     size: glyph.size
     color: glyph.color
+    loop: glyph.busy ? "turn" : ""
+    loopEvery: 300
   }
 
   Text {
@@ -41,7 +47,9 @@ Item {
     textFormat: Text.PlainText
     text: glyph.icon
     color: glyph.color
-    font.family: glyph.fontFamily
+    // The typed glyphs are Nerd Font icons, which only the shell's font has;
+    // Monocraft would leave them to a random fallback.
+    font.family: Style.font.family
     font.pixelSize: glyph.size
   }
 }

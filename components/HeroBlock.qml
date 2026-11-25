@@ -15,7 +15,7 @@ Item {
   property real markSize: Style.font.display
   property string title: ""
   property string line: ""
-  property color lineColor: Qt.darker(host.fg, 1.3)
+  property color lineColor: host.quiet(host.fg, 0.25)
   // A line that answers the pointer shows at once.
   property bool instant: false
   // Lines the prompt always keeps room for, so one wrapping as it changes
@@ -79,12 +79,12 @@ Item {
 
   // Measures two real lines of the prompt, for the room it always keeps.
   MonoText {
+    fontFamily: hero.host.fontFamily
+    step: "small"
     id: twoLines
     visible: false
     textFormat: Text.PlainText
     text: hero.keepLines > 1 ? "X\nX" : "X"
-    font.family: hero.host.fontFamily
-    font.pixelSize: Style.font.caption
   }
 
   PixelIcon {
@@ -109,6 +109,8 @@ Item {
       height: Math.max(titleText.implicitHeight, actionRow.implicitHeight)
 
       MonoText {
+        fontFamily: hero.host.fontFamily
+        step: "title"
         id: titleText
         anchors.left: parent.left
         anchors.right: actionRow.left
@@ -118,9 +120,6 @@ Item {
         textFormat: Text.PlainText
         text: hero.title
         color: hero.host.fg
-        font.family: hero.host.fontFamily
-        font.pixelSize: Style.font.title
-        font.bold: true
       }
 
       Row {
@@ -142,15 +141,17 @@ Item {
       height: Math.max(lineText.implicitHeight, twoLines.implicitHeight)
 
       MonoText {
+        fontFamily: hero.host.fontFamily
+        step: "small"
         id: promptSign
         textFormat: Text.PlainText
-        text: "❯"
+        text: "›"
         color: hero.lineColor
-        font.family: hero.host.fontFamily
-        font.pixelSize: Style.font.caption
       }
 
       MonoText {
+        fontFamily: hero.host.fontFamily
+        step: "small"
         id: lineText
         anchors.left: promptSign.right
         anchors.leftMargin: Style.space(6)
@@ -159,8 +160,6 @@ Item {
         textFormat: Text.StyledText
         text: hero.revealed
         color: hero.lineColor
-        font.family: hero.host.fontFamily
-        font.pixelSize: Style.font.caption
       }
     }
   }
